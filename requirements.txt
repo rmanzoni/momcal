@@ -1,0 +1,9 @@
+# Reference environment: the v1 correction was produced with exactly these versions (Python 3.13).
+# Install with:  python -m pip install -r requirements.txt && python -m pip install -e . --no-deps
+numpy==2.5.3
+iminuit==2.33.0
+uproot==5.7.7
+awkward==2.14.0
+matplotlib==3.11.2
+PyYAML==6.0.3
+pytest==8.4.2

@@ -1,0 +1,10 @@
+# Quick check of the full chain on a subset (about 1-2 minutes on one core plus the reading time). Not for physics.
+name: RDs_quick
+version: test
+inputs:
+  data: ["${RDS_NTUPLES}/rs_slim_21oct2026.root"]
+  mc:   ["${RDS_NTUPLES}/sig_slim_21oct2026.root"]
+  max_data: 150000
+  max_mc: 400000
+output:
+  dir: "results/${name}_${version}"

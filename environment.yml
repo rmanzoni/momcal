@@ -1,0 +1,10 @@
+# Reference environment for conda / mamba / micromamba:
+#   micromamba create -f environment.yml && micromamba activate rds-momcalib && pip install -e . --no-deps
+name: rds-momcalib
+channels:
+  - conda-forge
+dependencies:
+  - python=3.13
+  - pip
+  - pip:
+      - -r requirements.txt

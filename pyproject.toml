@@ -1,0 +1,23 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "scalesmear"
+version = "1.0.0"
+description = "Track momentum scale and extra resolution of MC fitted to data with the Ds -> phi(KK) pi peak (R(Ds), 2018 BParking)"
+requires-python = ">=3.9"
+# minimum versions; the reference environment is pinned in requirements.txt / environment.yml
+dependencies = ["numpy>=1.24", "iminuit>=2.20", "uproot>=5.0", "matplotlib>=3.6", "PyYAML>=6.0"]
+
+[project.optional-dependencies]
+test = ["pytest>=7"]
+
+[project.scripts]
+scalesmear = "scalesmear.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
