@@ -79,24 +79,62 @@ def plot_lineshape(fit, res, path):
     fig.savefig(path, dpi=130, bbox_inches="tight"); plt.close(fig)
 
 
+def plot_fit_components_arrays(c, n_raw, T, values, comb, eta_edges, chi2, ndf, path, title=""):
+    """The fit to data itself, categories grouped by |eta| of the most forward track: data, total fit, corrected-MC signal
+    and background components, and pulls of data against the total. Arrays: bin centres c [GeV]; per category the raw data
+    counts n_raw, the normalised template T, the fitted values Ns_i, Nb_i, lam_i, kap_i (in `values`), chi2, ndf."""
+    ne = len(eta_edges) - 1; per = len(n_raw) // ne; X = 1e3 * c
+    fig = plt.figure(figsize=(5 * ne, 6.4)); gs = fig.add_gridspec(2, ne, height_ratios=[3, 1.2], hspace=0.06, wspace=0.22)
+    for e in range(ne):
+        n = np.zeros_like(c); sig = np.zeros_like(c); bkg = np.zeros_like(c)
+        for k in range(e * per, (e + 1) * per):
+            Ns, Nb, lam, kap = (values[f"{q}_{k}"] for q in ("Ns", "Nb", "lam", "kap"))
+            n += n_raw[k]; sig += Ns * T[k]; bkg += Nb * expo_shape(c, lam, kap if comb == "expo2" else 0.0)
+        tot = sig + bkg; er = np.sqrt(np.maximum(n, 1))
+        a0 = fig.add_subplot(gs[0, e]); a1 = fig.add_subplot(gs[1, e], sharex=a0)
+        a0.fill_between(X, 0, bkg, color="0.85", lw=0, label="background (exp. of quadratic)")
+        a0.plot(X, sig, color=RED, lw=1.3, ls="--", label="signal: corrected MC")
+        a0.plot(X, tot, color=BLUE, lw=1.6, label="total fit")
+        a0.errorbar(X, n, er, fmt="o", ms=2.0, color="k", lw=0.6, label="data")
+        cs = sum(chi2[e * per:(e + 1) * per]); nd = sum(ndf[e * per:(e + 1) * per])
+        a0.text(0.02, 0.97, f"max |η| {eta_edges[e]:.1f}–{eta_edges[e + 1]:.1f}\n{per} categories summed\n"
+                f"signal {sig.sum():,.0f}\nbackground {bkg.sum():,.0f}", transform=a0.transAxes, va="top", fontsize=8)
+        a0.set_ylim(0, 1.3 * n.max()); plt.setp(a0.get_xticklabels(), visible=False)
+        a1.plot(X, (n - tot) / er, "o", ms=2.2, color=BLUE); a1.axhspan(-2, 2, color="0.92", zorder=0)
+        a1.axhline(0, color="0.5", lw=0.6); a1.set_ylim(-5, 5); a1.set_xlabel("m(KKπ) [MeV]")
+        a1.text(0.02, 0.06, f"χ² {cs:.0f} / {nd} (per category, summed)", transform=a1.transAxes, fontsize=8)
+        if e == 0:
+            a0.set_ylabel("candidates / MeV"); a1.set_ylabel("(data − fit) / σ"); H, L = a0.get_legend_handles_labels()
+    fig.legend(H[::-1], L[::-1], loc="upper center", ncol=4, frameon=False, bbox_to_anchor=(0.5, 0.97), fontsize=9)
+    fig.suptitle(title or "Fit to data: signal (corrected MC) + background, categories grouped by the |η| of the most forward track",
+                 fontsize=10, y=1.0)
+    fig.savefig(path, dpi=130, bbox_inches="tight"); plt.close(fig)
+
+
+def plot_fit_components(fit, res, path, title=""):
+    _, _, T, _, _ = _models(fit, res)
+    plot_fit_components_arrays(fit.c, fit.n_raw, T, res.values, fit.comb, fit.corr.eta_edges, res.chi2, res.ndf, path, title)
+
+
 def term_values(res, term, nb):
     """(value, error) per |eta| bin of a term, in display units; v0, v1 shown as r0 [1e-3], r1 [1e-4/GeV]."""
     out = []
     for b in range(nb):
         n = f"{term}_{b}" if f"{term}_{b}" in res.values else f"{term}_all"
         x, dx = res.values[n], res.errors[n]
-        if term in ("v0", "v1"):                         # r = sqrt(v) in units of 1e-3 (v0) or 1e-4/GeV (v1)
+        if term in ("v0", "v1", "a2", "c2"):             # sqrt of the fitted variance: 1e-3 (v0, a2) or 1e-4/GeV (v1, c2)
             r = np.sqrt(max(x, 0.0)); dr = dx / (2 * r) if r > 0.3 * np.sqrt(dx) else np.sqrt(dx)
             out.append((r, dr))
         else:
-            f = {"s0": 1e3, "s1": 1e3, "k": 1e4}[term]; out.append((f * x, f * dx))
+            f = {"s0": 1e3, "s1": 1e3, "k": 1e4, "A": 1e3, "e": 1e3, "M": 1e4}[term]; out.append((f * x, f * dx))
     return np.array(out)
 
 
 def plot_terms(res, path, truth=None):
     """The five terms per |eta| bin; a shared term is a band."""
     nb = len(res.config["eta_edges"]) - 1; e = res.config["eta_edges"]
-    U = {"s0": "s0  [10⁻³]", "s1": "s1  [MeV]", "k": "k  [10⁻⁴ GeV⁻¹]", "v0": "r0  [10⁻³]", "v1": "r1  [10⁻⁴ GeV⁻¹]"}
+    U = {"A": "A  [10⁻³]", "e": "ε  [MeV]", "M": "M  [10⁻⁴ GeV⁻¹]", "a2": "a  [10⁻³]", "c2": "c  [10⁻⁴ GeV⁻¹]",
+         "s0": "s0  [10⁻³]", "s1": "s1  [MeV]", "k": "k  [10⁻⁴ GeV⁻¹]", "v0": "r0  [10⁻³]", "v1": "r1  [10⁻⁴ GeV⁻¹]"}
     terms = [t for t in U if any(n.startswith(t + "_") for n in res.corr_names)]
     fig, ax = plt.subplots(1, len(terms), figsize=(3.3 * len(terms), 3.4), squeeze=False); ax = ax[0]; xb = np.arange(nb)
     for j, t in enumerate(terms):

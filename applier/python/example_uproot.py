@@ -19,7 +19,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from rds_trkcalib import TrackCalib, track_id_from_kinematics
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-DEFAULT_JSON = os.path.join(HERE, "..", "data", "rds_trkcalib_2018BParking_v1.json")
+DEFAULT_JSON = os.path.join(HERE, "..", "data", "rds_trkcalib_2018BParking_v2.json")
 MK, MPI = 0.493677, 0.13957
 TRACKS = {"k1": MK, "k2": MK, "pi": MPI}           # prefix -> mass hypothesis; branches <prefix>_px/_py/_pz/_charge
 MUON = dict(pt="mu_pt", eta="mu_eta", phi="mu_phi", charge="mu_charge")

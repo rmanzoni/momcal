@@ -1,0 +1,52 @@
+scalesmear 1.0.0 | git 8a92a9a26d2cff49141969cc0b937c82f2361cb7 | numpy 2.5.3 iminuit 2.33.0 | physics hash 19c5bd285f9c5bb6
+data: 1105575 candidates after '' from 2 file(s) in 1 s
+mc: 4215253 candidates after '' from 7 file(s) in 2 s
+after m(KK) window and D+ veto: data {'n_in': 1105575, 'kk_window': 1.0, 'dplus_veto': 0.8237007891820998, 'n_out': 910663}, MC {'n_in': 4215253, 'kk_window': 1.0, 'dplus_veto': 0.7982363098964641, 'n_out': 3364768}
+fit: 11 correction terms + 72 nuisances, 18 categories
+  2000 likelihood calls, 8.5 min
+  4000 likelihood calls, 14.0 min
+  6000 likelihood calls, 14.0 min
+  8000 likelihood calls, 21.2 min
+  10000 likelihood calls, 21.5 min
+  12000 likelihood calls, 25.6 min
+  14000 likelihood calls, 26.2 min
+  16000 likelihood calls, 32.2 min
+  18000 likelihood calls, 33.9 min
+  20000 likelihood calls, 35.6 min
+  22000 likelihood calls, 38.3 min
+  24000 likelihood calls, 38.9 min
+  26000 likelihood calls, 40.3 min
+valid minimum: True
+  A_0        =   +1.0312 +- 0.1245  [1e-3]
+  A_1        =   +0.9076 +- 0.1562  [1e-3]
+  A_2        =   +1.2906 +- 0.2175  [1e-3]
+  e_all      =   -0.2867 +- 0.4153  [MeV]
+  M_0        =   -0.1684 +- 0.1014  [1e-4/GeV]
+  M_1        =   -0.4268 +- 0.2330  [1e-4/GeV]
+  M_2        =   +1.2529 +- 0.5868  [1e-4/GeV]
+  a2_0       =   +5.5113 +- 1.8300  [(1e-3)^2]
+  a2_1       =  +11.7407 +- 2.6278  [(1e-3)^2]
+  a2_2       =   +0.2033 +- 1.0357  [(1e-3)^2]
+  c2_all     =  +17.6576 +- 6.0963  [(1e-4/GeV)^2]
+  total chi2/ndf = 1727.4/1620
+  max|eta| 0.0-0.7, min pT 0.0-1.0, Ds+ chi2/ndf = 95.2/90
+  max|eta| 0.0-0.7, min pT 0.0-1.0, Ds- chi2/ndf = 90.4/90
+  max|eta| 0.0-0.7, min pT 1.0-1.6, Ds+ chi2/ndf = 81.1/90
+  max|eta| 0.0-0.7, min pT 1.0-1.6, Ds- chi2/ndf = 76.3/90
+  max|eta| 0.0-0.7, min pT 1.6-100.0, Ds+ chi2/ndf = 97.1/90
+  max|eta| 0.0-0.7, min pT 1.6-100.0, Ds- chi2/ndf = 91.3/90
+  max|eta| 0.7-1.2, min pT 0.0-1.0, Ds+ chi2/ndf = 98.2/90
+  max|eta| 0.7-1.2, min pT 0.0-1.0, Ds- chi2/ndf = 90.0/90
+  max|eta| 0.7-1.2, min pT 1.0-1.6, Ds+ chi2/ndf = 77.0/90
+  max|eta| 0.7-1.2, min pT 1.0-1.6, Ds- chi2/ndf = 88.3/90
+  max|eta| 0.7-1.2, min pT 1.6-100.0, Ds+ chi2/ndf = 97.1/90
+  max|eta| 0.7-1.2, min pT 1.6-100.0, Ds- chi2/ndf = 107.2/90
+  max|eta| 1.2-2.5, min pT 0.0-1.0, Ds+ chi2/ndf = 89.8/90
+  max|eta| 1.2-2.5, min pT 0.0-1.0, Ds- chi2/ndf = 113.7/90
+  max|eta| 1.2-2.5, min pT 1.0-1.6, Ds+ chi2/ndf = 95.1/90
+  max|eta| 1.2-2.5, min pT 1.0-1.6, Ds- chi2/ndf = 121.1/90
+  max|eta| 1.2-2.5, min pT 1.6-100.0, Ds+ chi2/ndf = 100.6/90
+  max|eta| 1.2-2.5, min pT 1.6-100.0, Ds- chi2/ndf = 117.8/90
+fit time 40.4 min, 27459 calls, valid True
+correction file: repro/v2_cms/rds_trkcalib_RDs_2018BParking_DsPhiPi_trkcalib_v2.json
+done: repro/v2_cms

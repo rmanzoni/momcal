@@ -16,6 +16,7 @@ selection:
   dplus_veto: 0.050
 
 model:
+  convention: v1                     # p' = p (1 + s0 + s1/p + k q pT)(1 + sqrt(r0^2 + r1^2 pT^2) z); kept to reproduce v1
   eta_edges: [0.0, 0.7, 1.2, 2.5]
   terms: [s0, s1, k, v0, v1]
   shared: [s1, v1]

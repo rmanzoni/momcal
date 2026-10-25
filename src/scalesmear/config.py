@@ -22,10 +22,13 @@ DEFAULTS = {
         "dplus_veto": 0.050,              # remove |m(K pi pi) - m(D+)| < dplus_veto [GeV], data and MC; 0 = no veto
     },
     "model": {
+        # 'cms': k' = k (1 + A - e k + q M/k)(1 + sqrt(a^2 + c^2/k^2) z), k = 1/pT  (CMS W-mass convention, default)
+        # 'v1' : p' = p (1 + s0 + s1/p + k q pT)(1 + sqrt(r0^2 + r1^2 pT^2) z)   (convention of the v1 correction)
+        "convention": "cms",
         "eta_edges": [0.0, 0.7, 1.2, 2.5],
-        "terms": ["s0", "s1", "k", "v0", "v1"],
-        "shared": ["s1", "v1"],
-        "start": {"s0": -1.0e-3, "v0": 11.0},   # per term (all bins) or per parameter name (e.g. s0_2)
+        "terms": None,                    # None = all five terms of the convention
+        "shared": None,                   # None = cms: e, c2 / v1: s1, v1
+        "start": None,                    # per term (all bins) or per parameter name (e.g. A_2); None = convention default
     },
     "categories": {
         "pt_edges": [0.0, 1.0, 1.6, 100.0],   # softest-track pT [GeV]
@@ -49,14 +52,19 @@ DEFAULTS = {
         "data_frac": 0.2,                 # fraction of the MC used as pseudo-data (the rest is the template)
         "bkg_frac": 0.5,                  # background fraction added to the pseudo-data
         "bkg_slope": -2.6,                # exponential slope of that background [1/GeV]
-        "inject": {"s0": -1.0e-3, "s1": -0.3e-3, "k_0": 2.0e-5, "k_1": 5.0e-5, "k_2": -1.2e-4,
-                   "v0_0": 6.0, "v0_1": 12.0, "v0_2": 2.0, "v1": 14.0},
+        "inject": None,                   # {term or parameter: value}; None = close to the v1 result, in the chosen convention
     },
     "output": {
         "dir": "results/${name}_${version}",
         "cache": True,                    # keep the selected tracks as .npz in <dir>/cache for fast reruns
         "plots": True,
     },
+}
+
+
+TOY_INJECT = {
+    "cms": {"A": 1.0e-3, "e": -0.3e-3, "M_0": -2.0e-5, "M_1": -5.0e-5, "M_2": 1.2e-4, "a2_0": 6.0, "a2_1": 12.0, "a2_2": 2.0, "c2": 14.0},
+    "v1": {"s0": -1.0e-3, "s1": -0.3e-3, "k_0": 2.0e-5, "k_1": 5.0e-5, "k_2": -1.2e-4, "v0_0": 6.0, "v0_1": 12.0, "v0_2": 2.0, "v1": 14.0},
 }
 
 
@@ -105,6 +113,19 @@ def set_key(cfg, dotted, value):
     d[keys[-1]] = _numify(yaml.safe_load(value))
 
 
+def _fill_convention(cfg):
+    """Terms, shared terms, start values and toy injection left unset take the defaults of model.convention."""
+    from .model import DEFAULT_MODEL
+    conv = cfg["model"]["convention"]
+    if conv not in DEFAULT_MODEL:
+        raise ValueError(f"model.convention must be one of {list(DEFAULT_MODEL)}")
+    for k, v in DEFAULT_MODEL[conv].items():
+        if cfg["model"][k] is None:
+            cfg["model"][k] = copy.deepcopy(v)
+    if cfg["toys"]["inject"] is None:
+        cfg["toys"]["inject"] = copy.deepcopy(TOY_INJECT[conv])
+
+
 def load_config(path=None, overrides=()):
     import yaml
     user = {}
@@ -112,9 +133,14 @@ def load_config(path=None, overrides=()):
         with open(path) as f:
             user = _numify(yaml.safe_load(f) or {})
     cfg = _merge(DEFAULTS, user)
+    overrides = list(overrides)
+    first = [o for o in overrides if o.startswith("model.convention=")]       # the convention decides the defaults below
+    for o in first:
+        set_key(cfg, *o.split("=", 1))
+    _fill_convention(cfg)
     for o in overrides:
-        k, _, v = o.partition("=")
-        set_key(cfg, k, v)
+        if o not in first:
+            set_key(cfg, *o.split("=", 1))
     cfg = _expand(cfg, cfg)
     if not cfg["inputs"]["data"] or not cfg["inputs"]["mc"]:
         raise ValueError("inputs.data and inputs.mc must be given")

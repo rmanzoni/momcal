@@ -5,7 +5,7 @@ import pytest
 from scalesmear.io import Sample, MK, MPI
 
 MDS, MPHI = 1.96835, 1.019461
-INJECT = {"s0_0": -1.5e-3, "k_0": 2.0e-4, "v0_0": 16.0}       # correction hidden in the synthetic "data"
+INJECT = {"A_0": 1.5e-3, "M_0": -2.0e-4, "a2_0": 16.0}       # correction hidden in the synthetic "data" (CMS convention)
 
 
 def toy_ds(n, seed):
@@ -46,14 +46,14 @@ def to_branches(s, m, mkk, rng, nfail=0):
 @pytest.fixture(scope="session")
 def ntuples(tmp_path_factory):
     import uproot
-    from scalesmear.model import PtVarCorrection, MorphedMC
+    from scalesmear.model import CmsCorrection, MorphedMC
     d = tmp_path_factory.mktemp("ntuples"); rng = np.random.default_rng(5)
     mc = toy_ds(160_000, 1)
     m, mkk = masses(mc.p)
     with uproot.recreate(d / "mc.root") as f:
         f["tree"] = to_branches(mc, m, mkk, rng, nfail=0.05)
     sig = toy_ds(50_000, 2)
-    corr = PtVarCorrection([0, 2.5], terms=("s0", "k", "v0"))
+    corr = CmsCorrection([0, 2.5], terms=("A", "M", "a2"))
     f_ = corr.factor(MorphedMC(sig, corr, seed=99, light=False), [INJECT[n] for n in corr.names])
     sig = Sample(sig.p * f_[..., None], sig.charge, sig.m_kkpi, sig.m_kk)
     m, mkk = masses(sig.p)
@@ -73,7 +73,7 @@ def small_config(ntuples, tmp_path):
     import yaml
     cfg = dict(name="synthetic", version="test",
                inputs=dict(data=[str(ntuples / "data.root")], mc=[str(ntuples / "mc.root")]),
-               model=dict(eta_edges=[0.0, 2.5], terms=["s0", "k", "v0"], shared=[], start={"s0": -1e-3, "v0": 9.0}),
+               model=dict(eta_edges=[0.0, 2.5], terms=["A", "M", "a2"], shared=[], start={"A": 1e-3, "a2": 9.0}),
                categories=dict(pt_edges=None, split_charge=True),
                output=dict(dir=str(tmp_path / "out"), plots=True))
     p = tmp_path / "cfg.yaml"; p.write_text(yaml.safe_dump(cfg))

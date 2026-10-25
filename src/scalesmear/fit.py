@@ -64,7 +64,8 @@ class FitResult:
 
     def summary(self):
         lines = [f"valid minimum: {self.valid}"]
-        units = {"s0": (1e3, "1e-3"), "s1": (1e3, "MeV"), "k": (1e4, "1e-4/GeV"), "v0": (1.0, "(1e-3)^2"), "v1": (1.0, "(1e-4/GeV)^2"),
+        units = {"A": (1e3, "1e-3"), "e": (1e3, "MeV"), "M": (1e4, "1e-4/GeV"), "a2": (1.0, "(1e-3)^2"), "c2": (1.0, "(1e-4/GeV)^2"),
+                 "s0": (1e3, "1e-3"), "s1": (1e3, "MeV"), "k": (1e4, "1e-4/GeV"), "v0": (1.0, "(1e-3)^2"), "v1": (1.0, "(1e-4/GeV)^2"),
                  "s": (1e3, "1e-3"), "r": (1e3, "1e-3"), "r0": (1e3, "1e-3"), "r1": (1e4, "1e-4/GeV")}
         for n in self.corr_names:
             f, unit = units.get(n.rsplit("_", 1)[0], units.get(n.split("_")[0], (1e3, "1e-3")))

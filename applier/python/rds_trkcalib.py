@@ -1,14 +1,18 @@
-"""Apply the R(Ds) track momentum calibration (schema rds_trkcalib/1) to MC tracks.
+"""Apply the R(Ds) track momentum calibration to MC tracks. Reads correction files of schema rds_trkcalib/2 and /1.
 
+schema 2, CMS W-mass convention (arXiv:2412.13872), on the curvature k = 1/pT:
+    k' = k (1 + A - e*k + q*M/k)(1 + sqrt(a^2 + c^2/k^2) z)
+    i.e. pT' = pT / [ (1 + A - e/pT + q*M*pT) * (1 + sqrt(max(a2 + c2*pT^2, 0)) * z) ]
+schema 1 (the first, v1 convention):
     p' = p * (1 + s0 + s1/p + k*q*pT) * (1 + sqrt(max(v0*1e-6 + v1*1e-8*pT^2, 0)) * z)
 
-Only the momentum magnitude changes; the direction is kept. Apply to MC only, to every charged track
-(kaons, pion, muon), each with its own pT, charge and |eta|.
+Only the momentum magnitude changes; the direction is kept, so p'/p = pT'/pT = factor(). Apply to MC only, to every
+charged track (kaons, pion, muon), each with its own pT, charge and |eta|.
 
 Usage
 -----
     from rds_trkcalib import TrackCalib
-    cal = TrackCalib("rds_trkcalib_2018BParking_v1.json")
+    cal = TrackCalib("rds_trkcalib_2018BParking_v2.json")
     z = cal.gauss(run, lumi, event, track_id)               # fixed per track
     f = cal.factor(p, pt, eta, q, z)                         # numpy arrays or scalars
     px2, py2, pz2 = px * f, py * f, pz * f
@@ -21,7 +25,8 @@ import json
 import numpy as np
 
 __all__ = ["TrackCalib", "splitmix64", "gauss_from_key", "track_id_from_kinematics"]
-TERMS = ("s0", "s1", "k", "v0", "v1")
+TERMS = {"rds_trkcalib/1": ("s0", "s1", "k", "v0", "v1"), "rds_trkcalib/2": ("A", "e", "M", "a2", "c2")}
+SCALE_TERMS = {"rds_trkcalib/1": ("s0", "s1", "k"), "rds_trkcalib/2": ("A", "e", "M")}
 _M64 = 0xFFFFFFFFFFFFFFFF
 
 
@@ -81,12 +86,15 @@ class TrackCalib:
     def __init__(self, path):
         with open(path) as f:
             self.cfg = json.load(f)
-        if self.cfg.get("schema") != "rds_trkcalib/1":
-            raise ValueError(f"{path}: unknown schema {self.cfg.get('schema')!r}")
+        self.schema = self.cfg.get("schema")
+        if self.schema not in TERMS:
+            raise ValueError(f"{path}: unknown schema {self.schema!r}")
+        self.cms = self.schema == "rds_trkcalib/2"
+        self.terms = TERMS[self.schema]
         self.edges = np.asarray(self.cfg["eta_bins"]["edges"], float)
         self.nb = len(self.edges) - 1
         self.seed = int(self.cfg["random"]["seed"])
-        self.nominal = {t: np.asarray(self.cfg["per_bin"][t], float) for t in TERMS}
+        self.nominal = {t: np.asarray(self.cfg["per_bin"][t], float) for t in self.terms}
         self.variation_names = ["nominal", "scale_only", "smear_only"] + [
             f"{n}_{d}" for n in self.cfg["variations"]["names"] for d in ("up", "down")]
         self._cache = {}
@@ -100,10 +108,12 @@ class TrackCalib:
         if variation in self._cache:
             return self._cache[variation]
         p = {t: v.copy() for t, v in self.nominal.items()}
+        scale_terms = SCALE_TERMS[self.schema]
         if variation == "scale_only":
-            p["v0"][:] = 0.0; p["v1"][:] = 0.0
+            for t in self.terms:
+                if t not in scale_terms: p[t][:] = 0.0
         elif variation == "smear_only":
-            p["s0"][:] = 0.0; p["s1"][:] = 0.0; p["k"][:] = 0.0
+            for t in scale_terms: p[t][:] = 0.0
         elif variation != "nominal":
             name, _, d = variation.rpartition("_")
             names = self.cfg["variations"]["names"]
@@ -111,7 +121,7 @@ class TrackCalib:
                 raise ValueError(f"unknown variation {variation!r}; known: {self.variation_names}")
             shift = self.cfg["variations"]["shift_per_bin"][names.index(name)]
             sign = 1.0 if d == "up" else -1.0
-            for t in TERMS:
+            for t in self.terms:
                 p[t] = p[t] + sign * np.asarray(shift[t], float)
         self._cache[variation] = p
         return p
@@ -122,18 +132,26 @@ class TrackCalib:
 
     # factors -------------------------------------------------------
     def scale(self, p, pt, eta, q, variation="nominal"):
-        """Scale factor 1 + s0 + s1/p + k q pT."""
+        """Momentum scale factor without smearing: 1/(1 + A - e/pT + q M pT) (schema 2) or 1 + s0 + s1/p + k q pT (schema 1)."""
         P = self.params(variation); b = self.eta_bin(eta)
-        return 1.0 + P["s0"][b] + P["s1"][b] / np.asarray(p, float) + P["k"][b] * np.asarray(q, float) * np.asarray(pt, float)
+        pt = np.asarray(pt, float); q = np.asarray(q, float)
+        if self.cms:
+            return 1.0 / (1.0 + P["A"][b] - P["e"][b] / pt + P["M"][b] * q * pt)
+        return 1.0 + P["s0"][b] + P["s1"][b] / np.asarray(p, float) + P["k"][b] * q * pt
 
     def resolution(self, pt, eta, variation="nominal"):
-        """Extra relative resolution sqrt(v0 1e-6 + v1 1e-8 pT^2)."""
+        """Extra relative resolution: sqrt(a2 + c2 pT^2) (schema 2, on the curvature) or sqrt(v0 1e-6 + v1 1e-8 pT^2)."""
         P = self.params(variation); b = self.eta_bin(eta); pt = np.asarray(pt, float)
+        if self.cms:
+            return np.sqrt(np.maximum(P["a2"][b] + P["c2"][b] * pt * pt, 0.0))
         return np.sqrt(np.maximum(P["v0"][b] * 1e-6 + P["v1"][b] * 1e-8 * pt * pt, 0.0))
 
     def factor(self, p, pt, eta, q, z, variation="nominal"):
-        """Full factor p'/p for tracks of momentum p, transverse momentum pt, pseudorapidity eta, charge q, Gaussian z."""
-        out = self.scale(p, pt, eta, q, variation) * (1.0 + self.resolution(pt, eta, variation) * np.asarray(z, float))
+        """Full factor p'/p (= pT'/pT) for tracks of momentum p, transverse momentum pt, pseudorapidity eta, charge q,
+        Gaussian z. Schema 2 smears the curvature (divides by 1 + sigma z); schema 1 the momentum (multiplies)."""
+        sm = 1.0 + self.resolution(pt, eta, variation) * np.asarray(z, float)
+        sc = self.scale(p, pt, eta, q, variation)
+        out = sc / sm if self.cms else sc * sm
         return float(out) if np.ndim(out) == 0 else out
 
     def gauss(self, run, lumi, event, track_id):

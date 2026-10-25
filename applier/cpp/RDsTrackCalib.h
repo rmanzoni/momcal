@@ -1,15 +1,19 @@
-// RDsTrackCalib.h -- apply the R(Ds) track momentum calibration (schema rds_trkcalib/1) to MC tracks.
+// RDsTrackCalib.h -- apply the R(Ds) track momentum calibration to MC tracks (correction files rds_trkcalib/2 and /1).
 //
+// schema 2, CMS W-mass convention (arXiv:2412.13872), on the curvature k = 1/pT:
+//   k' = k (1 + A - e*k + q*M/k)(1 + sqrt(a^2 + c^2/k^2) z)
+//   pT' = pT / [ (1 + A - e/pT + q*M*pT) * (1 + sqrt(max(a2 + c2*pT^2, 0)) * z) ]
+// schema 1 (the first, v1 convention):
 //   p' = p * (1 + s0 + s1/p + k*q*pT) * (1 + sqrt(max(v0*1e-6 + v1*1e-8*pT^2, 0)) * z)
 //
-// Only the momentum magnitude changes; the direction is kept. Apply to MC only, to every charged track
-// (kaons, pion, muon), each with its own pT, charge and |eta|.
+// Only the momentum magnitude changes; the direction is kept, so p'/p = pT'/pT = factor(). Apply to MC only, to every
+// charged track (kaons, pion, muon), each with its own pT, charge and |eta|.
 //
 // Header only, C++14, no dependencies (a small JSON reader is included). Works in CMSSW, in ROOT macros
 // (also with RDataFrame multithreading: all methods are const) and in plain executables.
 //
 //   #include "RDsTrackCalib.h"
-//   rdscalib::TrackCalib cal("rds_trkcalib_2018BParking_v1.json");
+//   rdscalib::TrackCalib cal("rds_trkcalib_2018BParking_v2.json");
 //   double z = cal.gauss(run, lumi, event, trackId);        // fixed per track
 //   double f = cal.factor(p, pt, eta, q, z);                // p'/p
 //   double fUp = cal.factor(p, pt, eta, q, z, "eig0_up");   // statistical variations eig0 ... eig10
@@ -200,43 +204,53 @@ inline int64_t trackIdFromKinematics(double pt, double eta, double phi) {
 }
 
 // ------------------------------------------------------------------ the correction
+// five terms per |eta| bin: schema 2 (A, e, M, a2, c2), schema 1 (s0, s1, k, v0, v1)
 struct Params {
-  std::vector<double> s0, s1, k, v0, v1;  // one value per |eta| bin
+  std::vector<double> t[5];
 };
 
 class TrackCalib {
  public:
   explicit TrackCalib(const std::string& path) {
     const json::Value c = json::parseFile(path);
-    if (c["schema"].str != "rds_trkcalib/1") throw std::runtime_error("rdscalib: unknown schema in " + path);
+    const std::string schema = c["schema"].str;
+    if (schema == "rds_trkcalib/2") {
+      cms_ = true; names_ = {"A", "e", "M", "a2", "c2"};
+    } else if (schema == "rds_trkcalib/1") {
+      cms_ = false; names_ = {"s0", "s1", "k", "v0", "v1"};
+    } else {
+      throw std::runtime_error("rdscalib: unknown schema '" + schema + "' in " + path);
+    }
     name_ = c["name"].str + " " + c["version"].str;
     edges_ = c["eta_bins"]["edges"].numbers();
     nb_ = static_cast<int>(edges_.size()) - 1;
     seed_ = static_cast<uint64_t>(c["random"]["seed"].num);
     const json::Value& pb = c["per_bin"];
-    Params nom{pb["s0"].numbers(), pb["s1"].numbers(), pb["k"].numbers(), pb["v0"].numbers(), pb["v1"].numbers()};
-    for (const auto* v : {&nom.s0, &nom.s1, &nom.k, &nom.v0, &nom.v1})
-      if (static_cast<int>(v->size()) != nb_) throw std::runtime_error("rdscalib: per_bin size mismatch");
+    Params nom;
+    for (int i = 0; i < 5; ++i) {
+      nom.t[i] = pb[names_[i]].numbers();
+      if (static_cast<int>(nom.t[i].size()) != nb_) throw std::runtime_error("rdscalib: per_bin size mismatch");
+    }
     sets_["nominal"] = nom;
-    Params so = nom; std::fill(so.v0.begin(), so.v0.end(), 0.); std::fill(so.v1.begin(), so.v1.end(), 0.);
+    Params so = nom; for (int i = 3; i < 5; ++i) std::fill(so.t[i].begin(), so.t[i].end(), 0.);   // no smearing
     sets_["scale_only"] = so;
-    Params sm = nom; for (auto* v : {&sm.s0, &sm.s1, &sm.k}) std::fill(v->begin(), v->end(), 0.);
+    Params sm = nom; for (int i = 0; i < 3; ++i) std::fill(sm.t[i].begin(), sm.t[i].end(), 0.);   // no scale change
     sets_["smear_only"] = sm;
     const json::Value& var = c["variations"];
-    for (size_t i = 0; i < var["names"].arr.size(); ++i) {
-      const std::string n = var["names"][i].str;
-      const json::Value& s = var["shift_per_bin"][i];
+    for (size_t j = 0; j < var["names"].arr.size(); ++j) {
+      const std::string n = var["names"][j].str;
+      const json::Value& s = var["shift_per_bin"][j];
       for (int sign : {+1, -1}) {
         Params p = nom;
-        auto add = [&](std::vector<double>& t, const json::Value& d) {
-          for (int b = 0; b < nb_; ++b) t[b] += sign * d[b].num;
-        };
-        add(p.s0, s["s0"]); add(p.s1, s["s1"]); add(p.k, s["k"]); add(p.v0, s["v0"]); add(p.v1, s["v1"]);
+        for (int i = 0; i < 5; ++i)
+          for (int b = 0; b < nb_; ++b) p.t[i][b] += sign * s[names_[i]][b].num;
         sets_[n + (sign > 0 ? "_up" : "_down")] = p;
       }
     }
   }
 
+  bool cmsConvention() const { return cms_; }
+  const std::vector<std::string>& termNames() const { return names_; }
   const std::string& name() const { return name_; }
   int nBins() const { return nb_; }
   const std::vector<double>& etaEdges() const { return edges_; }
@@ -258,21 +272,25 @@ class TrackCalib {
     return std::min(std::max(b, 0), nb_ - 1);
   }
 
-  // scale factor 1 + s0 + s1/p + k q pT
+  // momentum scale factor without smearing: 1/(1 + A - e/pT + q M pT) (schema 2) or 1 + s0 + s1/p + k q pT (schema 1)
   double scale(double p, double pt, double eta, int q, const std::string& variation = "nominal") const {
     const Params& P = params(variation);
     const int b = etaBin(eta);
-    return 1.0 + P.s0[b] + P.s1[b] / p + P.k[b] * q * pt;
+    if (cms_) return 1.0 / (1.0 + P.t[0][b] - P.t[1][b] / pt + P.t[2][b] * q * pt);
+    return 1.0 + P.t[0][b] + P.t[1][b] / p + P.t[2][b] * q * pt;
   }
-  // extra relative resolution sqrt(v0 1e-6 + v1 1e-8 pT^2)
+  // extra relative resolution: sqrt(a2 + c2 pT^2) (schema 2, on the curvature) or sqrt(v0 1e-6 + v1 1e-8 pT^2)
   double resolution(double pt, double eta, const std::string& variation = "nominal") const {
     const Params& P = params(variation);
     const int b = etaBin(eta);
-    return std::sqrt(std::max(P.v0[b] * 1e-6 + P.v1[b] * 1e-8 * pt * pt, 0.0));
+    if (cms_) return std::sqrt(std::max(P.t[3][b] + P.t[4][b] * pt * pt, 0.0));
+    return std::sqrt(std::max(P.t[3][b] * 1e-6 + P.t[4][b] * 1e-8 * pt * pt, 0.0));
   }
-  // full factor p'/p
+  // full factor p'/p = pT'/pT; schema 2 smears the curvature (divides by 1 + sigma z), schema 1 the momentum
   double factor(double p, double pt, double eta, int q, double z, const std::string& variation = "nominal") const {
-    return scale(p, pt, eta, q, variation) * (1.0 + resolution(pt, eta, variation) * z);
+    const double sm = 1.0 + resolution(pt, eta, variation) * z;
+    const double sc = scale(p, pt, eta, q, variation);
+    return cms_ ? sc / sm : sc * sm;
   }
   // the per-track Gaussian z with this file's seed
   double gauss(int64_t run, int64_t lumi, int64_t event, int64_t trackId) const {
@@ -289,6 +307,8 @@ class TrackCalib {
   int nb_ = 0;
   uint64_t seed_ = 0;
   std::map<std::string, Params> sets_;
+  std::vector<std::string> names_;
+  bool cms_ = true;
 };
 
 }  // namespace rdscalib

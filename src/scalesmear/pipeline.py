@@ -3,7 +3,6 @@ from __future__ import annotations
 import hashlib, json, os, sys, time
 import numpy as np
 from .io import load, Sample
-from .model import PtVarCorrection
 from .fit import ScaleSmearFit, make_categories
 from . import selection, provenance, export
 from .config import physics_hash
@@ -42,8 +41,9 @@ def _read(cfg, which, outdir):
 
 
 def make_corr(cfg):
+    from .model import MODELS
     m = cfg["model"]
-    return PtVarCorrection(m["eta_edges"], terms=tuple(m["terms"]), shared=tuple(m["shared"]))
+    return MODELS[m["convention"]](m["eta_edges"], terms=tuple(m["terms"]), shared=tuple(m["shared"]))
 
 
 def build_fit(cfg, data, mc):
@@ -89,7 +89,7 @@ def run(cfg):
         dt = time.time() - t0
         print(res.summary(), flush=True)
         print(f"fit time {dt / 60:.1f} min, {fit.minuit.nfcn} calls, valid {res.valid}", flush=True)
-        res.config.update(selection=sel, efficiencies=dict(data=eff_d, mc=eff_m), fit_time_s=round(dt), nfcn=int(fit.minuit.nfcn),
+        res.config.update(convention=cfg["model"]["convention"], selection=sel, efficiencies=dict(data=eff_d, mc=eff_m), fit_time_s=round(dt), nfcn=int(fit.minuit.nfcn),
                           physics_hash=prov["physics_hash"])
         rpath = os.path.join(out, "result.json"); res.to_json(rpath)
         cc = cfg["correction"]
@@ -103,6 +103,7 @@ def run(cfg):
             from . import plots
             plots.plot_fit(fit, res, os.path.join(out, "fit_categories.png"))
             plots.plot_lineshape(fit, res, os.path.join(out, "lineshape.png"))
+            plots.plot_fit_components(fit, res, os.path.join(out, "fit_components.png"))
             plots.plot_terms(res, os.path.join(out, "terms.png"))
         print("done:", out, flush=True)
         return res

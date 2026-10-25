@@ -23,11 +23,24 @@ def test_run_recovers_injected_and_is_deterministic(small_config):
 
 def test_toys_and_collect(small_config):
     small_config["toys"]["data_frac"] = 0.3
+    small_config["toys"]["inject"] = {"A": 1.0e-3, "M": -1.0e-4, "a2": 12.0}
     for s in (1, 2, 3):
         d = pipeline.run_toy(small_config, s)
         assert d["valid"]
         for n in d["values"]:
             assert abs(d["values"][n] - d["injected"][n]) < 5 * d["errors"][n], (n, d)
     summ = pipeline.collect_toys(small_config)
-    assert set(summ) == {"s0_0", "k_0", "v0_0"} and all(v["n"] == 3 for v in summ.values())
+    assert set(summ) == {"A_0", "M_0", "a2_0"} and all(v["n"] == 3 for v in summ.values())
     assert os.path.exists(os.path.join(small_config["output"]["dir"], "toys_pulls.png"))
+
+
+def test_v1_convention_matches_cms_to_first_order(small_config):
+    """The same synthetic data fitted in the v1 convention: s0 = -A, k = -M, v0 = a2 to first order."""
+    import copy
+    cfg = copy.deepcopy(small_config)
+    cfg["model"].update(convention="v1", terms=["s0", "k", "v0"], start={"s0": -1e-3, "v0": 9.0})
+    cfg["output"]["dir"] += "_v1"; cfg["output"]["plots"] = False
+    r = pipeline.run(cfg)
+    assert r.valid
+    for v1, cms, sign in (("s0_0", "A_0", -1), ("k_0", "M_0", -1), ("v0_0", "a2_0", +1)):
+        assert abs(r.values[v1] - sign * INJECT[cms]) < 4 * r.errors[v1], (v1, r.values[v1], r.errors[v1])
