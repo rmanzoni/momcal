@@ -13,7 +13,7 @@ A (field), e = ε (energy loss, GeV), M (sagitta, 1/GeV), a (multiple scattering
 | --- | --- |
 | `src/scalesmear/` | the fitter (Python package, command `scalesmear`) |
 | `configs/` | `rds2018_v3.yaml`: the current correction (κ_eff categories, CMS convention); `rds2018_v2.yaml`, `rds2018_v1.yaml`: earlier corrections, kept reproducible; `quick.yaml` checks the full chain in minutes |
-| `applier/` | the correction files `rds_trkcalib_2018BParking_v3.json` (current), `_v2.json` and `_v1.json`, plus code that applies them in C++ (header only) and Python. See `applier/README.md` |
+| `applier/` | the correction files `rds_trkcalib_2018BParking_v3.json` (current), `_v2.json` and `_v1.json`, plus code that applies them in C++ (header only) and Python. How to use them in an ntuplizer: Section 6 below; details in `applier/README.md` |
 | `tests/` | pytest suite: end-to-end on synthetic ntuples, applier = fitter, D⁺ veto, configuration |
 | `scripts/` | environment setup, v1 reproduction, result comparison |
 | `psi_t3/` | Slurm scripts for the PSI Tier-3 (one fit; toy arrays) |
@@ -100,6 +100,114 @@ The scripts request partition `standard`, 4 h, 1 core and 8 GB. These values hav
 | `fit.mc_bootstrap_seed` | — | Poisson(1) weights on the MC, for MC-template uncertainty studies |
 | `correction.seed` | 20181 | seed of the hash-based z used by the appliers |
 | `toys.*` | | closure-toy settings |
+
+## 6. Apply the correction when producing ntuples
+
+The correction is applied to **MC only**, to every charged track the analysis uses: kaons, pion and muon, each with its own pT, |η| and charge. Two appliers give identical numbers (to 2·10⁻¹⁶, checked by `applier/test/crosscheck.py`):
+
+- **Python:** `applier/python/rds_trkcalib.py`, one file, needs only numpy.
+- **C++:** `applier/cpp/RDsTrackCalib.h`, header only, C++14, no dependencies (it has its own JSON reader).
+
+Both read the correction file `applier/data/rds_trkcalib_2018BParking_v3.json`. Copy the applier and the JSON file next to the ntuplizer; nothing else from this package is needed.
+
+### 6.1 What to do for each MC track
+
+1. Take the track's pT, p, η and charge q.
+2. Get its Gaussian number z from a key that identifies the track in the event (Section 6.2).
+3. `f = factor(p, pT, η, q, z)` is p'/p. Multiply px, py and pz by f; the direction does not change.
+4. Recompute the energy with the track's mass hypothesis, then every quantity built from the momenta: masses, q², missing mass, etc.
+
+### 6.2 The random-number key
+
+`z = gauss(run, lumi, event, key)`. The same physical track must get the same z in every candidate of the event, so the key identifies the track, not the candidate. Two options:
+
+- **The track's index in its input collection**, for example the `packedPFCandidates` index. Add an offset for each further collection so that keys do not collide, for example 1 000 000 + index for `lostTracks`.
+- **The track's kinematics**, `track_id_from_kinematics(pt, eta, phi)` in Python or `rdscalib::trackIdFromKinematics(pt, eta, phi)` in C++. It rounds pT to 1 MeV and η, φ to 10⁻⁴. The fitter (`fit.z_mode: hash`) and `example_uproot.py` use this key.
+
+**Store z per track in the ntuple** (or the factor f for the nominal correction). With the raw momenta and z stored, every variation can be recomputed offline without reprocessing. Recomputing the kinematic key offline from float32 branches can, in rare cases, round differently from the double values seen in CMSSW and give a different z.
+
+### 6.3 Python
+
+```python
+import numpy as np
+from rds_trkcalib import TrackCalib, track_id_from_kinematics
+
+cal = TrackCalib("rds_trkcalib_2018BParking_v3.json")      # once, before the event loop
+
+# in the event loop, MC only
+aux = event.eventAuxiliary()                                # FWLite; any source of run, lumi, event works
+run, lumi, evt = aux.run(), aux.luminosityBlock(), aux.event()
+for trk, mass in tracks:                                    # e.g. [(k1, M_K), (k2, M_K), (pi, M_PI), (mu, M_MU)]
+    pt, eta, phi, q = trk.pt(), trk.eta(), trk.phi(), trk.charge()
+    p = pt * np.cosh(eta)
+    z = cal.gauss(run, lumi, evt, track_id_from_kinematics(pt, eta, phi))
+    f = cal.factor(p, pt, eta, q, z)                        # p'/p, a float
+    px, py, pz = trk.px() * f, trk.py() * f, trk.pz() * f
+    e = np.sqrt(px * px + py * py + pz * pz + mass * mass)
+    # optional, per variation: cal.factor(p, pt, eta, q, z, "eig0_up"), ...
+```
+
+- All functions also take numpy arrays, which is much faster for flat ntuples than a loop over tracks.
+- `cal.variation_names` lists the 43 variations of v3: `nominal`, `scale_only`, `smear_only`, `eig0_up` … `eig9_down` (statistical), `mctemplate_<term>_up/down` (MC template). `applier/README.md` explains how to combine them.
+- `cal.correct_p3(px, py, pz, q, z)` and `cal.correct_ptetaphi(pt, eta, phi, q, z)` return the corrected momentum directly.
+- For an existing flat ntuple, `applier/python/example_uproot.py` writes the factors and the corrected m(KKπ), m(KK) to a friend tree. Edit the branch names in `TRACKS` and `MUON` at its top, then:
+  ```bash
+  python applier/python/example_uproot.py mc.root tree mc_trkcalib.root --variations all
+  ```
+
+### 6.4 C++
+
+Standalone test (one candidate and a muon):
+```bash
+g++ -O2 -std=c++14 -I applier/cpp applier/cpp/example_standalone.cpp -o example
+./example applier/data/rds_trkcalib_2018BParking_v3.json
+```
+
+In a CMSSW module: put `RDsTrackCalib.h` in `<Package>/interface/` and the JSON file in `<Package>/data/`. `TrackCalib` has no default constructor, so build it in the module's constructor:
+```cpp
+#include "<Package>/interface/RDsTrackCalib.h"
+
+// member
+std::unique_ptr<const rdscalib::TrackCalib> trkCalib_;
+
+// constructor
+trkCalib_ = std::make_unique<const rdscalib::TrackCalib>(
+    edm::FileInPath(iConfig.getParameter<std::string>("trkCalibFile")).fullPath());
+// python config: trkCalibFile = cms.string("<Package>/data/rds_trkcalib_2018BParking_v3.json")
+
+// produce / analyze, MC only
+if (!iEvent.isRealData()) {
+  const auto& id = iEvent.id();
+  for (size_t i = 0; i < pfCands->size(); ++i) {               // the tracks the candidates are built from
+    const pat::PackedCandidate& c = (*pfCands)[i];
+    const double z = trkCalib_->gauss(id.run(), id.luminosityBlock(), static_cast<int64_t>(id.event()), i);
+    const double f = trkCalib_->factor(c.p(), c.pt(), c.eta(), c.charge(), z);
+    // corrected momentum: (c.px() * f, c.py() * f, c.pz() * f); energy from the mass hypothesis
+    // optional: trkCalib_->factor(c.p(), c.pt(), c.eta(), c.charge(), z, "eig0_up"), ...
+  }
+}
+```
+
+- Every method is `const`, so one instance can be shared by all streams of a multi-threaded job.
+- Muons from the muon collection: same call with the muon's pT, η, charge, and a key with its own offset, e.g. 2 000 000 + muon index.
+- `trkCalib_->variations()` lists the variation names; `trkCalib_->correctedPt(pt, eta, q, z)` returns the corrected pT directly.
+
+ROOT RDataFrame on a flat ntuple (edit the branch names in the `Define` strings first; this macro has not been run yet, as there is no ROOT in the test area):
+```bash
+cd applier/cpp
+root -l -b -q 'example_rdf.C("mc.root", "tree", "mc_trkcalib.root", "../data/rds_trkcalib_2018BParking_v3.json", true)'
+```
+The last argument says the ntuple has `run`, `lumi` and `event` branches; with `false` the entry number is used as the event key.
+
+### 6.5 Vertex fits
+
+Scaling the 4-vectors corrects every quantity computed from them. A vertex or kinematic fit made in the ntuplizer, however, reads the track parameters. For the correction to reach the fit results (refitted momenta, constrained masses), scale the track's q/p by 1/f, and the q/p row and column of its covariance by 1/f, before building the transient track. Otherwise the refitted quantities stay uncorrected.
+
+### 6.6 Checks after integration
+
+- Run `python applier/test/crosscheck.py` after any change to the appliers; it needs numpy and a C++14 compiler (set `CXX` to choose it).
+- In a few events, print pT, η, q, z and f from the ntuplizer, and recompute f offline with the Python applier from the same inputs and z. They must agree to about 10⁻¹⁵.
+- With v3, the corrected MC m(KKπ) peak moves down by about 1 MeV (−1.30 MeV on average in the inclusive Hb MC used for validation).
 
 ## Versions
 
