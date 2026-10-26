@@ -9,4 +9,4 @@ from .model import Correction, PtCorrection, PtVarCorrection
 from .fit import ScaleSmearFit, FitResult, mc_stat_bootstrap, make_categories
 __all__ = ["Sample", "load", "WORKING_POINTS", "Correction", "PtCorrection", "PtVarCorrection", "ScaleSmearFit", "FitResult",
            "mc_stat_bootstrap", "make_categories"]
-__version__ = "1.1.0"
+__version__ = "1.2.0"

@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "scalesmear"
-version = "1.1.0"
+version = "1.2.0"
 description = "Track momentum scale and extra resolution of MC fitted to data with the Ds -> phi(KK) pi peak (R(Ds), 2018 BParking)"
 requires-python = ">=3.9"
 # minimum versions; the reference environment is pinned in requirements.txt / environment.yml

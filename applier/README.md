@@ -17,7 +17,8 @@ Only the magnitude of the momentum changes; the direction stays. **Apply to MC o
 
 | Path | What |
 | --- | --- |
-| `data/rds_trkcalib_2018BParking_v2.json` | the current correction (CMS convention): per-bin values, fit values + covariance, 11 eigen-variations, random-number convention, derivation record |
+| `data/rds_trkcalib_2018BParking_v3.json` | the current correction (CMS convention, κ_eff categories): per-bin values, fit values + covariance, 10 statistical eigen-variations, 10 MC-template variations, random-number convention, derivation record |
+| `data/rds_trkcalib_2018BParking_v2.json` | the previous correction (CMS convention, softest-pT categories) |
 | `data/rds_trkcalib_2018BParking_v1.json` | the first correction, old convention (kept for comparison) |
 | `python/rds_trkcalib.py` | Python applier (numpy only), vectorised |
 | `python/example_uproot.py` | corrects a flat ntuple and writes a friend tree (tested) |
@@ -31,7 +32,7 @@ Only the magnitude of the momentum changes; the direction stays. **Apply to MC o
 Python:
 ```python
 from rds_trkcalib import TrackCalib
-cal = TrackCalib("data/rds_trkcalib_2018BParking_v2.json")
+cal = TrackCalib("data/rds_trkcalib_2018BParking_v3.json")
 z = cal.gauss(run, lumi, event, track_id)                  # fixed per track
 f = cal.factor(p, pt, eta, q, z)                           # p'/p ; arrays or scalars
 f_up = cal.factor(p, pt, eta, q, z, variation="eig3_up")
@@ -40,7 +41,7 @@ f_up = cal.factor(p, pt, eta, q, z, variation="eig3_up")
 C++:
 ```cpp
 #include "RDsTrackCalib.h"
-rdscalib::TrackCalib cal("rds_trkcalib_2018BParking_v2.json");   // build once, e.g. in the constructor of the producer
+rdscalib::TrackCalib cal("rds_trkcalib_2018BParking_v3.json");   // build once, e.g. in the constructor of the producer
 double z = cal.gauss(run, lumi, event, trackIndex);
 double f = cal.factor(p, pt, eta, q, z);                   // multiply px, py, pz by f, recompute E with the mass hypothesis
 ```
@@ -58,11 +59,12 @@ Any key works as long as the same physical track gets the same key in every cand
 | Name | Meaning |
 | --- | --- |
 | `nominal` | the fit result |
-| `eig0_up/down` … `eig10_up/down` | ±1σ along each eigenvector of the 11×11 fit covariance; uncorrelated, add the effects in quadrature |
+| `eig0_up/down` … | ±1σ along each eigenvector of the fit covariance (statistical); uncorrelated, add the effects in quadrature |
+| `mctemplate_<term>_up/down` | v3 only: ±1σ of the MC-template uncertainty of one term, from refits that change the template random numbers and resample the MC; add in quadrature with the statistical ones |
 | `scale_only` | scale terms only (A, ε, M), no extra smearing (for checks) |
 | `smear_only` | extra smearing only (a, c), no scale change (for checks) |
 
-These are statistical uncertainties of the fit only. Systematic variations (kernel, mass window, background shape, category edges, D⁺-veto dependence of A) are not included yet.
+Not included yet: kernel, mass window, background shape, category edges, D⁺-veto dependence of A.
 
 ## The muon
 
@@ -70,7 +72,7 @@ Use the same formula with the muon's own pT, charge and |η|. In the validation 
 
 ## Checks done
 
-- C++ vs Python, both correction files, 200 000 random tracks including bin edges, |η| > 2.5 and negative event numbers: the Gaussian z agrees to 4e-16 and the factor to 2e-16 for all 25 variations; the kinematic track id is identical.
+- C++ vs Python, all correction files (v1, v2, v3 with its 43 variations), 200 000 random tracks including bin edges, |η| > 2.5 and negative event numbers: the Gaussian z agrees to 4e-16 and the factor to 2e-16 for all 25 variations; the kinematic track id is identical.
 - Applier vs fitter, 3.4 M signal-MC tracks with the fitter's z: factors identical to 2e-16.
 - v2 vs v1 on 3.36 M MC tracks: scale factors differ by 2×10⁻⁵ on average; corrected m(KKπ) mean 1967.178 vs 1967.181 MeV, rms 9.655 vs 9.656 MeV (with the D⁺ veto).
 - Hash-based z vs the fitter's numpy z on the same MC (v1): corrected m(KKπ) mean 1967.853 vs 1967.854 MeV, rms 9.830 vs 9.830 MeV (1945–1991 MeV window; uncorrected 1968.727 / 9.695).

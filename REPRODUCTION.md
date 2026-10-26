@@ -28,3 +28,17 @@ Two runs that did not become v2, kept for the record:
 - **Curvature smeared with +z instead of −z**, i.e. the mirror-image smearing realisation: −2 ln L was 22.5 higher and c2 moved by 2.9σ. The MC-template
   realisation therefore carries an uncertainty that is not in the quoted errors (open item).
 - **a2 limited at 0**: same minimum, but HESSE was invalid because the forward a2 sat at the limit. Fixed by opening the limit.
+
+## v3 (κ_eff categories), 26 Oct 2026
+
+`scalesmear run configs/rds2018_v3.yaml` on the same candidates gives a valid minimum with an accurate covariance, χ² 2828.6 / 2730, in 26 min. It is a new fit, not a re-expression of v2: the categories, the template random numbers (`z_mode: hash`) and the resolution model (forward a² = 0; a², c² ≥ 0) change. Outputs are in `reference/v3/`.
+
+MC-template uncertainty, from 4 refits that change the template seed and resample the MC with Poisson(1) weights (all valid), as a fraction of the statistical error:
+
+| term | A (3 regions) | ε | M (3 regions) | a² (\|η\| < 0.7, 0.7–1.2) | c² |
+| --- | --- | --- | --- | --- | --- |
+| ratio | 0.11, 0.25, 0.35 | 0.19 | 0.26, 0.31, 0.63 | 0.66, 1.06 | 1.49 |
+
+The correction file carries these as `mctemplate_<term>` variations. The spread is from 4 fits, so each value is known to about 40%.
+
+A fifth refit (seed 5) did not converge, even after the automatic retries: the EDM stayed above threshold and the covariance was not positive definite. It is left out of the numbers above. Including it would raise the A spreads to 0.20, 0.35 and 0.40, inside the stated ~40% uncertainty of the estimate. One refit in five failing to converge is itself a sign that the resolution terms are only weakly constrained.

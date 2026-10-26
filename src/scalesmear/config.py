@@ -29,10 +29,16 @@ DEFAULTS = {
         "terms": None,                    # None = all five terms of the convention
         "shared": None,                   # None = cms: e, c2 / v1: s1, v1
         "start": None,                    # per term (all bins) or per parameter name (e.g. A_2); None = convention default
+        "fix": {},                        # terms held fixed, per term or parameter name, e.g. {c2: 14.0} (toys, checks)
+        "ties": {},                       # {parameter: parameter it equals}, e.g. {a2_2: a2_1}
+        "limits": {},                     # {term: [low, high]} replacing the model defaults, e.g. {a2: [0, 400], c2: [0, 400]}
     },
     "categories": {
         "pt_edges": [0.0, 1.0, 1.6, 100.0],   # softest-track pT [GeV]
         "split_charge": True,
+        "eta_edges": None,                # |eta| edges of the categories (max |eta| of the 3 tracks); None = model.eta_edges
+        "kappa_edges": None,              # if set: split by kappa_eff (sensitivity-weighted 1/pT, 1/GeV) instead of softest-track pT
+        "share_bkg_shape": False,         # one background shape per (|eta| region, charge) instead of one per category
     },
     "fit": {
         "mass_range": [1.920, 2.015],
@@ -41,6 +47,7 @@ DEFAULTS = {
         "smooth_data": True,
         "seed": 12345,                    # per-track Gaussian z of the MC template
         "z_mode": "sequential",           # 'sequential' (v1: numpy generator, candidate order) or 'hash' (from the track itself)
+        "mc_bootstrap_seed": None,        # if set: MC candidates get Poisson(1) weights from this seed (MC-statistics studies)
     },
     "correction": {                        # what goes into the exported correction file
         "seed": 20181,                    # seed of the hash-based z used by the appliers
@@ -50,6 +57,7 @@ DEFAULTS = {
     },
     "toys": {                              # closure toys: part of the MC becomes pseudo-data with a known correction
         "data_frac": 0.2,                 # fraction of the MC used as pseudo-data (the rest is the template)
+        "template_frac": 1.0,             # fraction of the remaining MC used as template (smaller = faster toys)
         "bkg_frac": 0.5,                  # background fraction added to the pseudo-data
         "bkg_slope": -2.6,                # exponential slope of that background [1/GeV]
         "inject": None,                   # {term or parameter: value}; None = close to the v1 result, in the chosen convention
@@ -73,7 +81,7 @@ def _merge(base, over):
     for k, v in (over or {}).items():
         if k not in out:
             raise KeyError(f"unknown configuration key '{k}'")
-        out[k] = _merge(out[k], v) if isinstance(out[k], dict) and isinstance(v, dict) and k not in ("start", "inject") else v
+        out[k] = _merge(out[k], v) if isinstance(out[k], dict) and isinstance(v, dict) and k not in ("start", "inject", "fix", "ties", "limits") else v
     return out
 
 
@@ -108,7 +116,7 @@ def set_key(cfg, dotted, value):
     keys = dotted.split("."); d = cfg
     for k in keys[:-1]:
         d = d[k]
-    if keys[-1] not in d and keys[-2:-1] not in (["start"], ["inject"]):
+    if keys[-1] not in d and keys[-2:-1] not in (["start"], ["inject"], ["fix"], ["ties"], ["limits"]):
         raise KeyError(f"unknown configuration key '{dotted}'")
     d[keys[-1]] = _numify(yaml.safe_load(value))
 

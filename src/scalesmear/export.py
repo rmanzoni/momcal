@@ -39,9 +39,10 @@ def convention_of(names):
     return "cms" if any(n.split("_")[0] in ("A", "M", "a2", "c2") for n in names) else "v1"
 
 
-def per_bin(names, values, nb, conv):
-    """Expand fitted values to one value per |eta| bin and term, in the units of the file. Terms not fitted are 0."""
-    c = CONVENTIONS[conv]; v = dict(zip(names, values))
+def per_bin(names, values, nb, conv, ties=None):
+    """Expand fitted values to one value per |eta| bin and term, in the units of the file. Terms not fitted are 0;
+    tied parameters take the value of their source."""
+    c = CONVENTIONS[conv]; v = dict(zip(names, values)); v.update({k: v[src] for k, src in (ties or {}).items()})
     return {t: [float(c["to_file"][t] * v.get(f"{t}_all", v.get(f"{t}_{b}", 0.0))) for b in range(nb)] for t in c["terms"]}
 
 
@@ -66,7 +67,10 @@ def write_correction(fit_json, out_path, name, version, dataset="", mc="", selec
     cov = np.array(d["correction_cov"], float)
     edges = [float(x) for x in d["config"]["eta_edges"]]; nb = len(edges) - 1
     lam, shifts = eigen_variations(cov)
-    pb = per_bin(names, vals, nb, conv)
+    keep = lam > 1e-12 * lam.max()                  # fixed terms give null directions: no variation for them
+    lam, shifts = lam[keep], shifts[keep]
+    ties = d["config"].get("ties") or {}
+    pb = per_bin(names, vals, nb, conv, ties)
     from . import __version__
     out = {
         "schema": C["schema"],
@@ -94,7 +98,7 @@ def write_correction(fit_json, out_path, name, version, dataset="", mc="", selec
                       "add the N effects in quadrature",
             "names": [f"eig{i}" for i in range(len(shifts))],
             "eigenvalues": lam.tolist(),
-            "shift_per_bin": [per_bin(names, s, nb, conv) for s in shifts]},
+            "shift_per_bin": [per_bin(names, s, nb, conv, ties) for s in shifts]},
         "random": {
             "algorithm": "splitmix64 chain over (seed, run, lumi, event, track_id), then Box-Muller (cos branch)",
             "seed": int(seed),
@@ -116,3 +120,27 @@ def write_correction(fit_json, out_path, name, version, dataset="", mc="", selec
     with open(out_path, "w") as f:
         json.dump(out, f, indent=1)
     return out
+
+
+def add_spread_variations(corr_json, result_jsons, prefix="mctemplate", note=""):
+    """Add one variation per fitted term, of size equal to the spread of that term over refits that changed only the MC
+    template (seed of its random numbers and a Poisson resampling of the MC). Treated as uncorrelated between terms."""
+    d = json.load(open(corr_json)); conv = d.get("convention", "v1")
+    R = [json.load(open(f)) for f in result_jsons]
+    names = d["fit"]["names"]; nb = len(d["eta_bins"]["edges"]) - 1; ties = {}
+    sig = {}
+    for n in names:
+        x = np.array([r["values"][n] for r in R if n in r["values"]])
+        if len(x) > 1 and x.std(ddof=1) > 0: sig[n] = float(x.std(ddof=1))
+    for n, s in sig.items():
+        shift = np.zeros(len(names)); shift[names.index(n)] = s
+        d["variations"]["names"].append(f"{prefix}_{n}")
+        d["variations"]["eigenvalues"].append(None)
+        d["variations"]["shift_per_bin"].append(per_bin(names, shift, nb, conv, ties))
+    d["variations"]["method"] += (f"; {prefix}_<term>: +-1 sigma of the MC-template uncertainty of that term, from {len(R)} refits "
+                                  f"with a different template random seed and a Poisson(1) resampling of the MC; uncorrelated between "
+                                  f"terms; add in quadrature with the statistical variations. {note}").rstrip()
+    d.setdefault("systematics", {})[prefix] = dict(n_refits=len(R), sigma=sig, note=note)
+    with open(corr_json, "w") as f:
+        json.dump(d, f, indent=1)
+    return sig

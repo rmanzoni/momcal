@@ -33,7 +33,7 @@ double mKKpi(double k1x, double k1y, double k1z, double f1, double k2x, double k
 }  // namespace rdsex
 
 void example_rdf(const char* in, const char* tree, const char* out,
-                 const char* json = "../data/rds_trkcalib_2018BParking_v2.json", bool hasEventId = false) {
+                 const char* json = "../data/rds_trkcalib_2018BParking_v3.json", bool hasEventId = false) {
   static rdscalib::TrackCalib calib(json);
   rdsex::cal = &calib;
   ROOT::RDataFrame df0(tree, in);

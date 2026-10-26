@@ -1,0 +1,50 @@
+# v3: as v2 (CMS W-mass convention), with categories in kappa_eff (the candidate's sensitivity to e relative to A),
+# one background shape per (|eta| region, charge), and per-track random numbers from the track's own kinematics.
+# Set RDS_NTUPLES to the folder with the slim ntuples, e.g.
+#   export RDS_NTUPLES=~/Documents/RDs/understand_comb_slope/ntuples        (laptop)
+#   export RDS_NTUPLES=/work/$USER/rds/ntuples                             (PSI Tier3)
+name: RDs_2018BParking_DsPhiPi_trkcalib
+version: v3
+
+inputs:
+  data: ["${RDS_NTUPLES}/rs_slim_21oct2026.root"]     # right-sign Ds mu, 2018 BParking
+  mc:   ["${RDS_NTUPLES}/sig_slim_21oct2026.root"]    # Bs -> Ds(*) mu nu signal MC
+  tree: tree
+
+selection:
+  expression: "(dsMu_m < 5.37) & (tv_prob > 0.05) & (sv_prob > 0.05) & (ds_vtx_cosine_xyz_pv > 0.99)"
+  kk_window: 0.020
+  dplus_veto: 0.050
+
+model:
+  convention: cms
+  eta_edges: [0.0, 0.7, 1.2, 2.5]
+  terms: [A, e, M, a2, c2]           # a2 = (a/1e-3)^2, c2 = (c/1e-4 GeV^-1)^2 in the fit
+  shared: [e, c2]
+  start: {A: 1.0e-3, a2: 11.0}
+  fix: {a2_2: 0.0}                       # forward a2 not determined by the data; fixed at 0 (-2lnL +0.6 vs free, 1 dof)
+  limits: {a2: [0.0, 400.0], c2: [0.0, 400.0]}   # variances >= 0: a negative one lets a2 + c2 pT^2 reach 0 (kink, invalid fits)
+
+categories:
+  split_charge: true
+  kappa_edges: [-100.0, 0.15, 0.26, 0.37, 0.52, 100.0]   # 1/GeV; quintiles of the signal MC
+  share_bkg_shape: false                 # the background shape changes with kappa_eff (wrong-sign data): one per category
+
+fit:
+  mass_range: [1.920, 2.015]
+  bin_width: 0.001
+  background: expo2
+  smooth_data: true
+  seed: 12345
+  z_mode: hash
+
+correction:
+  seed: 20181
+  dataset: "2018 BParking, right-sign Ds mu candidates (rs_slim_21oct2026)"
+  mc: "Bs -> Ds(*) mu nu signal MC (sig_slim_21oct2026), all Ds -> phi pi candidates"
+  notes:
+    - "Statistical errors only; no systematic uncertainties yet."
+    - "The muon gets the same correction with its own pT, charge and |eta|."
+
+output:
+  dir: "results/${name}_${version}"

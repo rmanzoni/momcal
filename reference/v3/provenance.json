@@ -1,0 +1,83 @@
+{
+ "time": "2026-10-26T00:00:22",
+ "scalesmear": "1.1.0",
+ "git": {
+  "commit": "47645edeee6ad9a234fc01a169236cbadefc0594",
+  "dirty": true
+ },
+ "python": "3.13.16",
+ "libraries": {
+  "numpy": "2.5.3",
+  "iminuit": "2.33.0",
+  "uproot": "5.7.7",
+  "awkward": "2.14.0",
+  "matplotlib": "3.11.2",
+  "yaml": "6.0.3"
+ },
+ "host": "vm",
+ "platform": "Linux-6.18.44-fc-v153-x86_64-with-glibc2.39",
+ "cpu_count": 2,
+ "slurm_job": null,
+ "command": "venv_ref/bin/scalesmear run out/rds_momcalib/configs/rds2018_v3.yaml --set inputs.data=[/mnt/user-data/uploads/ntuples/claude_slim/trk/rs_*.npz] --set inputs.mc=[/mnt/user-data/uploads/ntuples/claude_slim/trk/sig_*.npz] --set selection.expression= --set output.dir=v3/real/v3_ref",
+ "inputs": {
+  "data": [
+   {
+    "path": "/mnt/user-data/uploads/ntuples/claude_slim/trk/rs_00.npz",
+    "size": 36772437,
+    "mtime": "2026-10-23T16:29:28",
+    "sha256_head_tail": "823fd10c24f4dd34a6c638b082d7314eafd0ab34fa16740c7439363b81675b2e"
+   },
+   {
+    "path": "/mnt/user-data/uploads/ntuples/claude_slim/trk/rs_01.npz",
+    "size": 30987328,
+    "mtime": "2026-10-23T16:29:20",
+    "sha256_head_tail": "b3d3a497850ea9f4a30fbeaf150b1f8fd29edc3f1854ddd703a427855257be7d"
+   }
+  ],
+  "mc": [
+   {
+    "path": "/mnt/user-data/uploads/ntuples/claude_slim/trk/sig_00.npz",
+    "size": 42660669,
+    "mtime": "2026-10-23T16:30:51",
+    "sha256_head_tail": "cb2679dd4a4a664978fd9491ed3c1192e3b3645be88e1eae1528b20a3aece2d2"
+   },
+   {
+    "path": "/mnt/user-data/uploads/ntuples/claude_slim/trk/sig_01.npz",
+    "size": 42662767,
+    "mtime": "2026-10-23T16:30:46",
+    "sha256_head_tail": "31fabb818123386d3c8c16cfae874580adfc7f2b9162e59a6e127eb5b0970784"
+   },
+   {
+    "path": "/mnt/user-data/uploads/ntuples/claude_slim/trk/sig_02.npz",
+    "size": 42663046,
+    "mtime": "2026-10-23T16:32:13",
+    "sha256_head_tail": "c7a4be129be4083686f09d7f65f0b14f3106af772fe58d63e7912141f00278e8"
+   },
+   {
+    "path": "/mnt/user-data/uploads/ntuples/claude_slim/trk/sig_03.npz",
+    "size": 42657976,
+    "mtime": "2026-10-23T16:32:12",
+    "sha256_head_tail": "2867fb031fba19e99456077b42cafeb761b0245b91174a3612f16f5e032f4b27"
+   },
+   {
+    "path": "/mnt/user-data/uploads/ntuples/claude_slim/trk/sig_04.npz",
+    "size": 42661537,
+    "mtime": "2026-10-23T16:33:40",
+    "sha256_head_tail": "6ad188237ec7720fea15260336dbb88edbdfbc611fce5cc8acd8d31e7b155f3d"
+   },
+   {
+    "path": "/mnt/user-data/uploads/ntuples/claude_slim/trk/sig_05.npz",
+    "size": 42660922,
+    "mtime": "2026-10-23T16:33:33",
+    "sha256_head_tail": "57365d2083fb2854611c466652fd5fa8a07644295845fafec0b06f5e22081eee"
+   },
+   {
+    "path": "/mnt/user-data/uploads/ntuples/claude_slim/trk/sig_06.npz",
+    "size": 936289,
+    "mtime": "2026-10-23T16:29:31",
+    "sha256_head_tail": "6174112c990d5c458268f988395129e4a79a4f1ef3c9269b6defbec15ae2aaba"
+   }
+  ]
+ },
+ "physics_hash": "af54826fc3a1fa3f"
+}

@@ -43,16 +43,22 @@ def _read(cfg, which, outdir):
 def make_corr(cfg):
     from .model import MODELS
     m = cfg["model"]
-    return MODELS[m["convention"]](m["eta_edges"], terms=tuple(m["terms"]), shared=tuple(m["shared"]))
+    return MODELS[m["convention"]](m["eta_edges"], terms=tuple(m["terms"]), shared=tuple(m["shared"]), ties=m.get("ties") or {},
+                                   limits=m.get("limits") or {})
 
 
 def build_fit(cfg, data, mc):
     m = cfg["model"]; c = cfg["categories"]; f = cfg["fit"]
     corr = make_corr(cfg)
-    cats = make_categories(m["eta_edges"], c["pt_edges"], c["split_charge"])
-    fit = ScaleSmearFit(data, mc, corr, categories=cats, mrange=tuple(f["mass_range"]), bw=f["bin_width"], comb=f["background"],
+    cats = make_categories(c.get("eta_edges") or m["eta_edges"], c["pt_edges"], c["split_charge"], kappa_edges=c["kappa_edges"],
+                           share_bkg_shape=c["share_bkg_shape"])
+    fix = {n: float(m["fix"].get(n, m["fix"].get(n.rsplit("_", 1)[0]))) for n in corr.names
+           if n in m["fix"] or n.rsplit("_", 1)[0] in m["fix"]}
+    fit = ScaleSmearFit(data, mc, corr, categories=cats, fix=fix, mrange=tuple(f["mass_range"]), bw=f["bin_width"], comb=f["background"],
                         kk_window=cfg["selection"]["kk_window"], seed=f["seed"], smooth_data=f["smooth_data"],
                         z_mode=f["z_mode"])
+    if f.get("mc_bootstrap_seed") is not None:            # resample the MC: each candidate weighted by Poisson(1)
+        fit.mc_w = np.random.default_rng(int(f["mc_bootstrap_seed"])).poisson(1.0, fit.mc.n).astype(float)
     start = {}
     for n in corr.names:
         t = n.rsplit("_", 1)[0]
@@ -89,7 +95,7 @@ def run(cfg):
         dt = time.time() - t0
         print(res.summary(), flush=True)
         print(f"fit time {dt / 60:.1f} min, {fit.minuit.nfcn} calls, valid {res.valid}", flush=True)
-        res.config.update(convention=cfg["model"]["convention"], selection=sel, efficiencies=dict(data=eff_d, mc=eff_m), fit_time_s=round(dt), nfcn=int(fit.minuit.nfcn),
+        res.config.update(convention=cfg["model"]["convention"], ties=dict(corr.ties), selection=sel, efficiencies=dict(data=eff_d, mc=eff_m), fit_time_s=round(dt), nfcn=int(fit.minuit.nfcn),
                           physics_hash=prov["physics_hash"])
         rpath = os.path.join(out, "result.json"); res.to_json(rpath)
         cc = cfg["correction"]
@@ -126,6 +132,8 @@ def run_toy(cfg, seed):
     mc, _ = selection.apply(mc, kk=0, veto=cfg["selection"]["dplus_veto"])
     T = cfg["toys"]
     a, b = mc.split(T["data_frac"], seed=seed); del mc
+    if T["template_frac"] < 1.0:
+        b, _ = b.split(T["template_frac"], seed=seed + 7919)
     corr = make_corr(cfg)
     inj = _values(corr, T["inject"], corr.start)
     lo, hi = cfg["fit"]["mass_range"]

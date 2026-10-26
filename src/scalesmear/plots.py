@@ -46,16 +46,17 @@ def plot_lineshape(fit, res, path):
     """Background-subtracted data vs signal MC before / after the correction, categories grouped by the |eta| bin of the most
     forward track (the categories are ordered |eta|-major)."""
     _, _, T, _, T0 = _models(fit, res)
-    ne = fit.corr.nb; per = fit.cat.n // ne; c = fit.c; X = 1e3 * c
-    edges = fit.corr.eta_edges
+    edges = np.asarray(getattr(fit.cat, "eta_edges", fit.corr.eta_edges)); ne = len(edges) - 1
+    per = fit.cat.n // ne; c = fit.c; X = 1e3 * c
     def stats(y, lo=1.945, hi=1.991):
         w = (c > lo) & (c < hi); y = np.clip(y[w], 0, None); x = 1e3 * c[w]; m = (x * y).sum() / y.sum()
         return m, np.sqrt(((x - m) ** 2 * y).sum() / y.sum())
     fig = plt.figure(figsize=(5 * ne, 6.4)); gs = fig.add_gridspec(2, ne, height_ratios=[3, 1.2], hspace=0.06, wspace=0.22)
     for e in range(ne):
         s = np.zeros_like(c); v = np.zeros_like(c); m1 = np.zeros_like(c); m0 = np.zeros_like(c)
+        nv = fit.nuisances_by_category(res.values)
         for k in range(e * per, (e + 1) * per):
-            Ns, Nb, lam, kap = (res.values[f"{q}_{k}"] for q in ("Ns", "Nb", "lam", "kap"))
+            Ns, Nb, lam, kap = (nv[f"{q}_{k}"] for q in ("Ns", "Nb", "lam", "kap"))
             s += fit.n_raw[k] - Nb * expo_shape(c, lam, kap if fit.comb == "expo2" else 0.0)
             v += fit.n_raw[k]; m1 += Ns * T[k]; m0 += Ns * T0[k]
         er = np.sqrt(np.maximum(v, 1))
@@ -113,7 +114,9 @@ def plot_fit_components_arrays(c, n_raw, T, values, comb, eta_edges, chi2, ndf, 
 
 def plot_fit_components(fit, res, path, title=""):
     _, _, T, _, _ = _models(fit, res)
-    plot_fit_components_arrays(fit.c, fit.n_raw, T, res.values, fit.comb, fit.corr.eta_edges, res.chi2, res.ndf, path, title)
+    plot_fit_components_arrays(fit.c, fit.n_raw, T, fit.nuisances_by_category(res.values), fit.comb,
+                               getattr(fit.cat, "eta_edges", fit.corr.eta_edges),
+                               res.chi2, res.ndf, path, title)
 
 
 def term_values(res, term, nb):
@@ -121,6 +124,9 @@ def term_values(res, term, nb):
     out = []
     for b in range(nb):
         n = f"{term}_{b}" if f"{term}_{b}" in res.values else f"{term}_all"
+        ties = getattr(res, "config", {}).get("ties", {}) if hasattr(res, "config") else {}
+        if n not in res.values and f"{term}_{b}" in ties:
+            n = ties[f"{term}_{b}"]
         x, dx = res.values[n], res.errors[n]
         if term in ("v0", "v1", "a2", "c2"):             # sqrt of the fitted variance: 1e-3 (v0, a2) or 1e-4/GeV (v1, c2)
             r = np.sqrt(max(x, 0.0)); dr = dx / (2 * r) if r > 0.3 * np.sqrt(dx) else np.sqrt(dx)

@@ -4,20 +4,34 @@ import json
 from dataclasses import dataclass, field
 import numpy as np
 from iminuit import Minuit
-from .io import Sample
+from .io import Sample, MK, MPI
 from .model import Correction, MorphedMC, smooth_hist, expo_shape, MPHI
 
 
-def make_categories(eta_edges, pt_edges=None, split_charge=False):
+def kappa_eff(sample: Sample):
+    """Sensitivity-weighted inverse pT of a candidate [1/GeV]: sum_i w_i/pT_i / sum_i w_i with w_i = dm/dln(p_i), the change of
+    m(KK pi) when track i's momentum is scaled. A momentum-scale term (A) moves m by -sum_i w_i * A; an energy-loss term (e)
+    by +sum_i w_i * e/pT_i. kappa_eff is therefore the ratio of a candidate's sensitivity to e and to A."""
+    p = sample.p; m2 = np.array([MK, MK, MPI]) ** 2
+    p2 = (p ** 2).sum(-1); E = np.sqrt(p2 + m2); pt = np.hypot(p[..., 0], p[..., 1])
+    Et = E.sum(1); Pt = p.sum(1); m = np.sqrt(np.maximum(Et ** 2 - (Pt ** 2).sum(1), 1e-12))
+    # dm/dln p_i = (1/m) [ p_i^2 / E_i * (Et - E_i) - p_i . (Pt - p_i) ]
+    w = (p2 / E * (Et[:, None] - E) - (p * (Pt[:, None, :] - p)).sum(-1)) / m[:, None]
+    return (w / pt).sum(1) / w.sum(1)
+
+
+def make_categories(eta_edges, pt_edges=None, split_charge=False, kappa_edges=None, share_bkg_shape=False):
     """Categories = max |eta| bin of the three tracks  x  pT bin of the softest track (optional)  x  Ds charge (optional,
     from the pion charge). Splitting by charge separates charge-dependent curvature biases."""
-    eta_edges = np.asarray(eta_edges, float); pt_edges = None if pt_edges is None else np.asarray(pt_edges, float)
-    ne = len(eta_edges) - 1; npt = 1 if pt_edges is None else len(pt_edges) - 1; nq = 2 if split_charge else 1
+    eta_edges = np.asarray(eta_edges, float)
+    use_kappa = kappa_edges is not None
+    sub_edges = np.asarray(kappa_edges if use_kappa else pt_edges, float) if (use_kappa or pt_edges is not None) else None
+    ne = len(eta_edges) - 1; npt = 1 if sub_edges is None else len(sub_edges) - 1; nq = 2 if split_charge else 1
     def f(sample: Sample):
         c = np.clip(np.digitize(np.abs(sample.eta()).max(1), eta_edges[1:-1]), 0, ne - 1)
-        if pt_edges is not None:
-            ptmin = np.hypot(sample.p[..., 0], sample.p[..., 1]).min(1)
-            c = c * npt + np.clip(np.digitize(ptmin, pt_edges[1:-1]), 0, npt - 1)
+        if sub_edges is not None:
+            x = kappa_eff(sample) if use_kappa else np.hypot(sample.p[..., 0], sample.p[..., 1]).min(1)
+            c = c * npt + np.clip(np.digitize(x, sub_edges[1:-1]), 0, npt - 1)
         if split_charge:
             c = c * 2 + (sample.charge[:, 2] < 0)
         return c
@@ -27,10 +41,15 @@ def make_categories(eta_edges, pt_edges=None, split_charge=False):
         for j in range(npt):
             for k in range(nq):
                 l = f"max|eta| {eta_edges[i]:.1f}-{eta_edges[i+1]:.1f}"
-                if pt_edges is not None: l += f", min pT {pt_edges[j]:.1f}-{pt_edges[j+1]:.1f}"
+                if sub_edges is not None:
+                    l += (f", kappa_eff {sub_edges[j]:.2f}-{sub_edges[j+1]:.2f}" if use_kappa else f", min pT {sub_edges[j]:.1f}-{sub_edges[j+1]:.1f}")
                 if split_charge: l += ", Ds+" if k == 0 else ", Ds-"
                 labels.append(l)
     f.labels = labels
+    f.eta_edges = eta_edges
+    # background shape groups: one exp-of-quadratic shape per (|eta| region, charge) shared by its pT / kappa bins
+    f.bkg_groups = np.array([(i * nq + k) if share_bkg_shape else (i * npt + j) * nq + k
+                             for i in range(ne) for j in range(npt) for k in range(nq)])
     return f
 
 
@@ -122,9 +141,12 @@ class ScaleSmearFit:
             wcat = self.cat(ws)
             self.ws_con = [self._ws_slope(np.histogram(ws.m_kkpi[wcat == i], self.edges)[0].astype(float)) for i in range(self.cat.n)]
         self.fix = fix or {}
+        self.bkg_groups = np.asarray(getattr(self.cat, "bkg_groups", np.arange(self.cat.n)))
+        self._make_layout()
         self.config = dict(eta_edges=list(map(float, corr.eta_edges)), species=corr.species, mrange=list(mrange), bw=bw,
                            comb=comb, recut_kk=recut_kk, kk_window=kk_window, ws_constraint=ws is not None, seed=seed, z_mode=z_mode,
-                           n_data=int(len(data)), n_mc=int(len(mc)), categories=self.cat.labels)
+                           n_data=int(len(data)), n_mc=int(len(mc)), categories=self.cat.labels,
+                           bkg_groups=self.bkg_groups.tolist())
 
     def _ws_slope(self, nw):
         def nll(N, lam):
@@ -149,10 +171,30 @@ class ScaleSmearFit:
             out.append(h / max(h.sum(), 1e-12))
         return out
 
+    def _make_layout(self):
+        """Parameter layout: correction terms, then the nuisances. With one background shape per category (default) the
+        nuisances are Ns_i, Nb_i, lam_i, kap_i per category (as in v1/v2); with shared shapes, Ns_i, Nb_i per category and
+        lamg_g, kapg_g per background group."""
+        k = len(self.corr.names); n = self.cat.n; g = self.bkg_groups
+        self.grouped = not np.array_equal(g, np.arange(n))
+        if not self.grouped:
+            self.nuis_names = [f"{q}_{i}" for i in range(n) for q in ("Ns", "Nb", "lam", "kap")]
+            base = k + 4 * np.arange(n)
+            self._ix = np.stack([base, base + 1, base + 2, base + 3], 1)
+        else:
+            groups = list(dict.fromkeys(g.tolist()))
+            self.nuis_names = [f"{q}_{i}" for i in range(n) for q in ("Ns", "Nb")] + [f"{q}_{x}" for x in groups for q in ("lamg", "kapg")]
+            pos = {x: j for j, x in enumerate(groups)}
+            self._ix = np.array([[k + 2 * i, k + 2 * i + 1, k + 2 * n + 2 * pos[g[i]], k + 2 * n + 2 * pos[g[i]] + 1] for i in range(n)])
+
     def _unpack(self, a):
-        k = len(self.corr.names)
-        cv = np.asarray(a[:k]); rest = np.asarray(a[k:]).reshape(self.cat.n, 4)
-        return cv, rest
+        k = len(self.corr.names); a = np.asarray(a, float)
+        return a[:k], a[self._ix]
+
+    def nuisances_by_category(self, values):
+        """{Ns_i, Nb_i, lam_i, kap_i} for every category from a dict of fitted values (any layout)."""
+        _, rest = self._unpack([values[x] for x in list(self.corr.names) + self.nuis_names])
+        return {f"{q}_{i}": float(r[j]) for i, r in enumerate(rest) for j, q in enumerate(("Ns", "Nb", "lam", "kap"))}
 
     def model(self, a):
         cv, rest = self._unpack(a)
@@ -208,7 +250,7 @@ class ScaleSmearFit:
         numerical noise from the inner fits; HESSE then gives stable errors. Templates are cached by correction values, so
         steps in the nuisance directions cost almost nothing. Returns the Minuit object."""
         k = len(self.corr.names); cache = {}
-        names = list(self.corr.names) + [f"{q}_{i}" for i in range(self.cat.n) for q in ("Ns", "Nb", "lam", "kap")]
+        names = list(self.corr.names) + self.nuis_names; ix = self._ix
         cnt = [0]
         def nll(*a):
             cnt[0] += 1
@@ -219,7 +261,7 @@ class ScaleSmearFit:
                 cache[key] = self.templates(np.asarray(key))
             T = cache[key]; v = 0.0
             for i in range(self.cat.n):
-                Ns, Nb, lam, kap = a[k + 4 * i: k + 4 * i + 4]
+                Ns, Nb, lam, kap = a[ix[i, 0]], a[ix[i, 1]], a[ix[i, 2]], a[ix[i, 3]]
                 mu = np.maximum(Ns * T[i] + Nb * expo_shape(self.c, lam, kap if self.comb == "expo2" else 0.0), 1e-12)
                 v += 2 * np.sum(mu - self.n[i] * np.log(mu))
             return v
@@ -228,8 +270,14 @@ class ScaleSmearFit:
             m.limits[x] = self.corr.limits(x); m.errors[x] = self.corr.step(x)
         for i in range(self.cat.n):
             m.limits[f"Ns_{i}"] = (0, None); m.limits[f"Nb_{i}"] = (0, None)
-            if self.comb != "expo2": m.fixed[f"kap_{i}"] = True
+        for x in self.nuis_names:
+            if self.comb != "expo2" and x.split("_")[0] in ("kap", "kapg"): m.fixed[x] = True
+        for x, v in self.fix.items():                       # correction terms held fixed (e.g. resolution terms in toys)
+            m.values[x] = v; m.fixed[x] = True
         m.migrad(); m.hesse()
+        for _ in range(2):                                  # an early stop is usually fixed by continuing from the end point
+            if m.valid: break
+            m.migrad(); m.hesse()
         return m
 
     def fit_full(self, start=None, progress=None) -> FitResult:
@@ -238,16 +286,27 @@ class ScaleSmearFit:
         errors as the profiled fit followed by full_hesse, in less time, and its errors are correct (pull widths 0.9-1.2).
         chi2 is computed from the raw (unsmoothed) counts, so it measures the fit quality."""
         cn = list(self.corr.names); start = start or {}
-        st = {x: start.get(x, self.corr.start(x)) for x in cn}; cv = np.array([st[x] for x in cn])
+        st = {x: start.get(x, self.corr.start(x)) for x in cn}; st.update({x: v for x, v in self.fix.items() if x in st})
+        cv = np.array([st[x] for x in cn])
         self._start = [[0.6 * n.sum(), 0.4 * n.sum(), -2.5, 0.0] for n in self.n]; self._start0 = None; self.ncalls = 0
         self.profile_nll(cv)
         vals = dict(st); vals.update({f"{q}_{i}": float(v) for i, nu in enumerate(self._start) for q, v in zip(("Ns", "Nb", "lam", "kap"), nu)})
+        if self.grouped:                                # shared shapes start at the background-weighted mean of the group
+            for x in dict.fromkeys(self.bkg_groups.tolist()):
+                ii = np.flatnonzero(self.bkg_groups == x); wb = np.array([self._start[i][1] for i in ii]) + 1e-9
+                vals[f"lamg_{x}"] = float(np.average([self._start[i][2] for i in ii], weights=wb))
+                vals[f"kapg_{x}"] = float(np.average([self._start[i][3] for i in ii], weights=wb))
         m = self.full_hesse(vals, progress=progress); self.minuit = m
         names = list(m.parameters); k = len(cn)
         mus, _ = self.model([m.values[x] for x in names])
         chi2 = [float(((n - mu) ** 2 / np.maximum(mu, 1)).sum()) for n, mu in zip(self.n_raw, mus)]
-        nfree_cat = 4 if self.comb == "expo2" else 3
-        ndf = [int(len(self.c) - nfree_cat - round(k / self.cat.n)) for _ in self.n]
+        nfree = len(self.nuis_names) - (0 if self.comb == "expo2" else sum(x.startswith("kap") for x in self.nuis_names))
+        ndf = [int(round(len(self.c) - (nfree + k) / self.cat.n)) for _ in self.n]
+        fm = m.fmin
+        self.config["minuit"] = dict(edm=float(fm.edm), above_max_edm=bool(fm.is_above_max_edm), call_limit=bool(fm.has_reached_call_limit),
+                                     hesse_failed=bool(fm.hesse_failed), posdef_covar=bool(fm.has_posdef_covar),
+                                     covar_accurate=bool(fm.has_accurate_covar), at_limit=[x for x in names if m.limits[x] is not None and
+                                     any(abs(m.values[x] - L) < 1e-6 * (1 + abs(L)) for L in m.limits[x] if L is not None and abs(L) != float("inf"))])
         return FitResult(names, {x: float(m.values[x]) for x in names}, {x: float(m.errors[x]) for x in names}, cn,
                          np.array(m.covariance)[:k, :k], bool(m.valid), float(m.fval), chi2, ndf, self.cat.labels, self.config)
 

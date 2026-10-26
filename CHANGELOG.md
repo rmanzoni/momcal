@@ -1,5 +1,19 @@
 # Changelog
 
+## 1.2.0 — 26 Oct 2026
+- v3 correction (`applier/data/rds_trkcalib_2018BParking_v3.json`, configuration `configs/rds2018_v3.yaml`):
+  - categories in kappa_eff, the candidate's sensitivity to e relative to A (5 bins x max|eta| x charge = 30), one background
+    shape per category. Errors relative to v2: A 0.49-0.81, e 0.39, M 0.89-0.95; corr(A, e) 0.96/0.90/0.74 -> 0.81/0.62/0.33;
+  - per-track random numbers from the track's own kinematics (`fit.z_mode: hash`): independent of candidate order;
+  - forward a2 fixed at 0 (not determined by the data; -2lnL +0.6 vs free, 1 dof; tying it to the 0.7-1.2 bin: +5.1);
+  - variances a2, c2 >= 0 (`model.limits`): a negative variance let a2 + c2 pT^2 reach 0, a kink that made fits invalid.
+- New options: `categories.kappa_edges`, `categories.share_bkg_shape`, `categories.eta_edges`, `model.fix`, `model.ties`,
+  `model.limits`, `fit.mc_bootstrap_seed`, `toys.template_frac`.
+- Invalid minima are retried from their end point; Minuit diagnostics are stored in result.json (`config.minuit`).
+- Correction files drop null variations (fixed terms).
+- Checked and not adopted: one background shape shared across kappa bins (the wrong-sign background changes with kappa_eff);
+  a separate M for 1.4 < |eta| < 2.5 (-2lnL -0.08 for one more parameter).
+
 ## 1.1.0 — 25 Oct 2026
 - Convention of the CMS W-mass measurement (arXiv:2412.13872, Eqs. 2-3), now the default (`model.convention: cms`):
   k' = k (1 + A - e k + q M/k)(1 + sqrt(a^2 + c^2/k^2) z), k = 1/pT. Terms A, e (epsilon), M, a, c with CMS definitions and

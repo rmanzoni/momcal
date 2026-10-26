@@ -1,5 +1,5 @@
 // Example: correct the three tracks of one Ds -> K K pi candidate and the muon, then recompute m(K K pi).
-// Build:  g++ -O2 -std=c++14 -I. example_standalone.cpp -o example && ./example ../data/rds_trkcalib_2018BParking_v2.json
+// Build:  g++ -O2 -std=c++14 -I. example_standalone.cpp -o example && ./example ../data/rds_trkcalib_2018BParking_v3.json
 #include "RDsTrackCalib.h"
 #include <cmath>
 #include <cstdio>
@@ -16,7 +16,7 @@ static double invMass(const Track* t, const double* f, int n) {
 }
 
 int main(int argc, char** argv) {
-  const char* path = argc > 1 ? argv[1] : "../data/rds_trkcalib_2018BParking_v2.json";
+  const char* path = argc > 1 ? argv[1] : "../data/rds_trkcalib_2018BParking_v3.json";
   rdscalib::TrackCalib cal(path);
   const long long run = 320500, lumi = 117, event = 123456789;
   // one candidate (made-up momenta in GeV): K+, K-, pi+

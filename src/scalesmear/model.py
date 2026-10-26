@@ -114,17 +114,27 @@ class PtVarCorrection(PtCorrection):
     STA = dict(s0=0.0, s1=0.0, k=0.0, v0=16.0, v1=4.0)
     STE = dict(s0=5e-5, s1=2e-4, k=1e-5, v0=0.5, v1=2.0)
 
-    def __init__(self, eta_edges=(0.0, 2.5), terms=None, shared=()):
+    def __init__(self, eta_edges=(0.0, 2.5), terms=None, shared=(), ties=None, limits=None):
+        """ties: {parameter: parameter it takes its value from}, e.g. {"a2_2": "a2_1"} (one a2 for the two outer bins).
+        limits: {term: (low, high)} replacing the class defaults for this instance."""
+        if limits:
+            self.LIM = dict(self.LIM); self.LIM.update({k: tuple(v) for k, v in limits.items()})
         self.eta_edges = np.asarray(eta_edges, float)
         self.nb = len(self.eta_edges) - 1
         terms = self.TERMS if terms is None else terms
         self.terms = tuple(t for t in self.TERMS if t in terms)
         self.shared = tuple(t for t in self.terms if t in shared)
+        self.ties = dict(ties or {})
         self.species = "common"; self.groups = ["all"]
         self.names = [f"{t}_all" if t in self.shared else f"{t}_{b}" for t in self.terms for b in ((0,) if t in self.shared else range(self.nb))]
+        bad = [k for k, v in self.ties.items() if k not in self.names or v not in self.names]
+        if bad:
+            raise ValueError(f"ties refer to unknown parameters: {bad}")
+        self.names = [n for n in self.names if n not in self.ties]
 
     def values_by_term(self, values):
         v = dict(zip(self.names, np.asarray(values, float)))
+        v.update({k: v[src] for k, src in self.ties.items()})
         return {t: np.full(self.nb, v[f"{t}_all"]) if t in self.shared else np.array([v.get(f"{t}_{b}", 0.0) for b in range(self.nb)])
                 for t in self.TERMS}
 

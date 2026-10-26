@@ -1,0 +1,95 @@
+name: RDs_2018BParking_DsPhiPi_trkcalib
+version: v3
+inputs:
+  data:
+  - /mnt/user-data/uploads/ntuples/claude_slim/trk/rs_*.npz
+  mc:
+  - /mnt/user-data/uploads/ntuples/claude_slim/trk/sig_*.npz
+  tree: tree
+  max_data: null
+  max_mc: null
+selection:
+  expression: null
+  kk_window: 0.02
+  dplus_veto: 0.05
+model:
+  convention: cms
+  eta_edges:
+  - 0.0
+  - 0.7
+  - 1.2
+  - 2.5
+  terms:
+  - A
+  - e
+  - M
+  - a2
+  - c2
+  shared:
+  - e
+  - c2
+  start:
+    A: 0.001
+    a2: 11.0
+  fix:
+    a2_2: 0.0
+  ties: {}
+  limits:
+    a2:
+    - 0.0
+    - 400.0
+    c2:
+    - 0.0
+    - 400.0
+categories:
+  pt_edges:
+  - 0.0
+  - 1.0
+  - 1.6
+  - 100.0
+  split_charge: true
+  eta_edges: null
+  kappa_edges:
+  - -100.0
+  - 0.15
+  - 0.26
+  - 0.37
+  - 0.52
+  - 100.0
+  share_bkg_shape: false
+fit:
+  mass_range:
+  - 1.92
+  - 2.015
+  bin_width: 0.001
+  background: expo2
+  smooth_data: true
+  seed: 12345
+  z_mode: hash
+  mc_bootstrap_seed: null
+correction:
+  seed: 20181
+  dataset: 2018 BParking, right-sign Ds mu candidates (rs_slim_21oct2026)
+  mc: Bs -> Ds(*) mu nu signal MC (sig_slim_21oct2026), all Ds -> phi pi candidates
+  notes:
+  - Statistical errors only; no systematic uncertainties yet.
+  - The muon gets the same correction with its own pT, charge and |eta|.
+toys:
+  data_frac: 0.2
+  template_frac: 1.0
+  bkg_frac: 0.5
+  bkg_slope: -2.6
+  inject:
+    A: 0.001
+    e: -0.0003
+    M_0: -2.0e-05
+    M_1: -5.0e-05
+    M_2: 0.00012
+    a2_0: 6.0
+    a2_1: 12.0
+    a2_2: 2.0
+    c2: 14.0
+output:
+  dir: v3/real/v3_ref
+  cache: true
+  plots: true
