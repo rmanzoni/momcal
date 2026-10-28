@@ -207,6 +207,67 @@ class CmsCorrection(PtVarCorrection):
         return out
 
 
+class CmsSpeciesCorrection(CmsCorrection):
+    """CmsCorrection with separate values of some terms for muon tracks and/or kaon tracks, e.g. muon_terms=("a2", "c2")
+    (own resolution for muons) or kaon_terms=("e",) (own energy loss for kaons). The extra parameters are named
+    <term>mu_<bin> / <term>mu_all and <term>K_<bin> / <term>K_all. A track is a muon (kaon) when the morph object has is_mu
+    (is_K) True for it: TrackMorph sets both from the track kinds, KKPiChannel sets is_K on the Ds tracks."""
+
+    SPECIES = (("mu", "is_mu"), ("K", "is_K"))
+
+    def __init__(self, eta_edges=(0.0, 2.5), terms=None, shared=(), ties=None, limits=None, muon_terms=(), kaon_terms=()):
+        super().__init__(eta_edges, terms, shared, ties, limits)
+        self.species_terms = {"mu": tuple(t for t in self.terms if t in muon_terms), "K": tuple(t for t in self.terms if t in kaon_terms)}
+        self.muon_terms = self.species_terms["mu"]
+        self.nbase = len(self.names)
+        for sp, _ in self.SPECIES:
+            self.names = self.names + [f"{t}{sp}_all" if t in self.shared else f"{t}{sp}_{b}" for t in self.species_terms[sp]
+                                       for b in ((0,) if t in self.shared else range(self.nb))]
+
+    def _split(self, values):
+        values = np.asarray(values, float)
+        base = super().values_by_term(values[:self.nbase])
+        v = dict(zip(self.names[self.nbase:], values[self.nbase:])); out = {}
+        for sp, _ in self.SPECIES:
+            d = {}
+            for t in self.species_terms[sp]:
+                d[t] = np.full(self.nb, v[f"{t}{sp}_all"]) if t in self.shared else np.array([v[f"{t}{sp}_{b}"] for b in range(self.nb)])
+            out[sp] = d
+        return base, out
+
+    def values_by_term(self, values):
+        return self._split(values)[0]
+
+    def factor(self, m, values):
+        t, sp = self._split(values)
+        if not hasattr(m, "_cms_cache"):
+            m._cms_cache = (1.0 / m.pt, m.q * m.pt, m.pt ** 2)
+        invpt, qpt, pt2 = m._cms_cache
+        g = (lambda x: np.broadcast_to(x[0], m.pt.shape)) if self.nb == 1 else (lambda x: x[m.idx])
+        val = {k: g(t[k]) for k in ("A", "e", "M", "a2", "c2")}
+        for name, flag in self.SPECIES:
+            mask = getattr(m, flag, None)
+            if mask is None or not sp[name]:
+                continue
+            mask = np.broadcast_to(mask, m.pt.shape)
+            for k, x in sp[name].items():
+                val[k] = np.where(mask, g(x), val[k])
+        scale = 1.0 + val["A"] - val["e"] * invpt + val["M"] * qpt
+        res = np.sqrt(np.maximum(val["a2"] * 1e-6 + val["c2"] * 1e-8 * pt2, 0.0))
+        return 1.0 / (scale * (1.0 + res * (self.Z_SIGN * m.z)))
+
+    def _base(self, name):
+        t, b = name.rsplit("_", 1)
+        for sp, _ in self.SPECIES:
+            if t.endswith(sp) and t[:-len(sp)] in self.TERMS:
+                return t[:-len(sp)] + "_" + b
+        return t + "_" + b
+
+    def limits(self, name): return super().limits(self._base(name))
+    def start(self, name): return super().start(self._base(name))
+    def step(self, name): return super().step(self._base(name))
+
+
 MODELS = {"cms": CmsCorrection, "v1": PtVarCorrection}
 DEFAULT_MODEL = {
     "cms": dict(terms=["A", "e", "M", "a2", "c2"], shared=["e", "c2"], start={"A": 1.0e-3, "a2": 11.0}),
@@ -277,6 +338,19 @@ def smooth_hist(x, edges, w=None, kernel="cubic"):
     for j, f in parts:
         ok = (j >= 0) & (j < n)
         out += np.bincount(j[ok], weights=(w * f)[ok], minlength=n)
+    return out
+
+
+def smooth_hist_sq(x, edges, w=None):
+    """Sum of squared kernel weights per bin of smooth_hist (cubic kernel): the statistical variance of that histogram."""
+    c = 0.5 * (edges[1:] + edges[:-1]); bw = edges[1] - edges[0]
+    u = (x - c[0]) / bw; w = np.ones_like(x) if w is None else w
+    n = len(c); out = np.zeros(n)
+    i = np.floor(u).astype(np.int64); t = u - i; t2 = t * t; t3 = t2 * t
+    parts = ((i - 1, (1 - t) ** 3 / 6), (i, (3 * t3 - 6 * t2 + 4) / 6), (i + 1, (-3 * t3 + 3 * t2 + 3 * t + 1) / 6), (i + 2, t3 / 6))
+    for j, f in parts:
+        ok = (j >= 0) & (j < n)
+        out += np.bincount(j[ok], weights=((w * f) ** 2)[ok], minlength=n)
     return out
 
 

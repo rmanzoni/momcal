@@ -58,7 +58,8 @@ def eigen_variations(cov):
     return lam, shifts
 
 
-def write_correction(fit_json, out_path, name, version, dataset="", mc="", selection="", notes=None, seed=DEFAULT_SEED):
+def write_correction(fit_json, out_path, name, version, dataset="", mc="", selection="", notes=None, seed=DEFAULT_SEED,
+                     description=None):
     """fit_json: a FitResult.to_json file (keys values, errors, correction, correction_cov, chi2, ndf, config)."""
     d = json.load(open(fit_json))
     names = list(d["correction"])
@@ -79,7 +80,7 @@ def write_correction(fit_json, out_path, name, version, dataset="", mc="", selec
         "version": version,
         "created": datetime.date.today().isoformat(),
         "producer": f"scalesmear {__version__}",
-        "description": "Per-track momentum scale and extra resolution for MC, fitted to the Ds -> phi(KK) pi mass peak in data.",
+        "description": description or "Per-track momentum scale and extra resolution for MC, fitted to the Ds -> phi(KK) pi mass peak in data.",
         "apply_to": "MC only, every charged track used in the analysis (kaons, pion, muon). Data are not corrected.",
         "formula": C["formula"],
         "reference": C["reference"],
@@ -114,6 +115,15 @@ def write_correction(fit_json, out_path, name, version, dataset="", mc="", selec
             "chi2": float(np.sum(d["chi2"])), "ndf": int(np.sum(d["ndf"])), "valid": bool(d.get("valid", True))},
         "notes": notes or [],
     }
+    for sp, label in (("mu", "muon"), ("K", "kaon")):     # species-specific terms (model.muon_terms / kaon_terms)
+        sp_names = [n for n in names if n.rsplit("_", 1)[0].endswith(sp) and n.rsplit("_", 1)[0][:-len(sp)] in C["terms"]]
+        if not sp_names:
+            continue
+        v = dict(zip(names, vals)); terms = sorted({n.rsplit("_", 1)[0][:-len(sp)] for n in sp_names})
+        out[f"per_bin_{label}"] = {t: [float(C["to_file"][t] * v.get(f"{t}{sp}_all", v.get(f"{t}{sp}_{b}", 0.0))) for b in range(nb)] for t in terms}
+        out["apply_to"] += (f" {label.capitalize()} tracks use per_bin_{label} for the terms " + ", ".join(terms) + " and per_bin for the others.")
+        out["variations"][f"shift_per_bin_{label}"] = [{t: [float(C["to_file"][t] * dict(zip(names, sh)).get(f"{t}{sp}_all", dict(zip(names, sh)).get(f"{t}{sp}_{b}", 0.0)))
+                                                            for b in range(nb)] for t in terms} for sh in shifts]
     if conv == "cms":
         out["per_bin_readable"] = {"a": [float(np.sqrt(max(x, 0))) for x in pb["a2"]],
                                    "c [1/GeV]": [float(np.sqrt(max(x, 0))) for x in pb["c2"]]}

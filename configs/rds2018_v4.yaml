@@ -1,0 +1,72 @@
+# v4: one fit of the per-track correction to three mass peaks, all from 2018 BParking with the same MC campaign:
+#   kkpi  : Ds -> phi(KK) pi in the R(Ds) right-sign sample (as v3)
+#   mumu  : J/psi -> mu mu in B+ -> J/psi K+ (Vcb skims, slim_hadd_jpsik.py)
+#   jpsik : B+ -> J/psi K+, m(refitted J/psi + K): measures the kaon (a common muon scale is absorbed by the J/psi refit)
+# All tracks share all terms (A, e, M, a, c per |eta| bin of the track), whatever the particle type.
+# Set RDS_NTUPLES to the folder with ntuples_26oct2026, e.g. export RDS_NTUPLES=~/Documents/RDs/rds_momcalib/ntuples_26oct2026
+name: RDs_2018BParking_trkcalib
+version: v4
+
+model:
+  convention: cms
+  eta_edges: [0.0, 0.7, 1.2, 2.5]
+  terms: [A, e, M, a2, c2]
+  shared: [e, c2]
+  start: {A: 1.0e-3, a2: 11.0}
+  fix: {}                                # v3 fixed a2_2 = 0 (Ds alone); with the J/psi channels it is left free
+  limits: {a2: [0.0, 400.0], c2: [0.0, 400.0]}
+  muon_terms: [a2, c2]                   # muons: own extra resolution (a, c); scale terms A, e, M shared by all tracks
+  kaon_terms: []                         # test: [e] (separate energy loss for kaons)
+
+fit:
+  seed: 12345
+  z_mode: hash
+  smooth_data: true
+  method: profile                        # Minuit over the correction terms, backgrounds and yields re-minimised at each step
+  mc_stat: true                          # Barlow-Beeston-lite: without it the forward resolution depends on the MC size
+
+channels:
+  kkpi:
+    enabled: true
+    data: ["${RDS_NTUPLES}/rds/data_2018_rs_26oct2026.root"]
+    mc:   ["${RDS_NTUPLES}/rds/signal_26oct2026.root"]
+    selection: "(tv_prob > 0.05) & (fv_prob > 0.05) & (ds_vtx_cosine_xyz_pv > 0.995) & (dsMu_m < 5.37) & (sv_prob > 0.05)"
+    kk_window: 0.020
+    dplus_veto: 0.050
+    mass_range: [1.920, 2.015]
+    bin_width: 0.001
+    categories: {pt_edges: null, split_charge: true, kappa_edges: [-100.0, 0.15, 0.26, 0.37, 0.52, 100.0], share_bkg_shape: false}
+  mumu:
+    enabled: true
+    data: ["${RDS_NTUPLES}/jpsik/data_calib.root"]
+    mc:   ["${RDS_NTUPLES}/jpsik/mc_jpsik_calib.root"]
+    selection: "(rf_mass > 5.20) & (rf_mass < 5.36)"      # near the B peak, where the data are B+ -> J/psi K+ like the MC
+    mass_range: [2.96, 3.24]
+    bin_width: 0.002
+    background: expo                                     # ~1% background: kap not determined
+    bkg_share: channel                                   # one slope for all categories (some have almost no background)
+    categories: {dpt_edges: [-1000.0, -4.0, -1.0, 1.0, 4.0, 1000.0]}   # pT(mu+) - pT(mu-) [GeV]
+  jpsik:
+    enabled: true
+    data: ["${RDS_NTUPLES}/jpsik/data_calib.root"]
+    mc:   ["${RDS_NTUPLES}/jpsik/mc_jpsik_calib.root"]
+    mc_jpsipi: ["${RDS_NTUPLES}/jpsik/mc_jpsipi_calib.root"]
+    selection: "(abs(jpsi_mass - 3.0969) < 0.15)"
+    mass_range: [5.05, 6.0]                              # as the Vcb J/psi K validation
+    bin_width: 0.002
+    background: expo2
+    bkg_share: category
+    refit_power: 1.0
+    argus: true                                          # ARGUS (x) Gauss for partially reconstructed B decays, endpoint m(B+) - m(pi+), p = 0.5
+    categories: {pt_edges: [2.0, 4.0, 7.0, 1000.0], split_charge: true}   # kaon pT [GeV]
+
+correction:
+  seed: 20181
+  dataset: "2018 BParking: R(Ds) right-sign Ds mu (26 Oct 2026) and B+ -> J/psi K+ (jpsi_tk ntuples, 08 Oct 2026)"
+  mc: "Bs -> Ds(*) mu nu signal MC (26 Oct 2026); B+ -> J/psi K+ and B+ -> J/psi pi+ MC (UL2018, 09 Oct 2026)"
+  notes:
+    - "Statistical errors only; no systematic uncertainties yet."
+    - "Every track (kaons, pions, muons) gets the same correction, chosen by its own |eta|."
+
+output:
+  dir: "results/${name}_${version}"

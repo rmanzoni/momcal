@@ -5,6 +5,9 @@
     scalesmear toys    CONFIG                            collect the toys: pull means and widths
     scalesmear export  RESULT.json OUT.json --name N --version V      correction file from an existing result
     scalesmear config  [CONFIG]                          print the full configuration with defaults
+    scalesmear multi       CONFIG [--set ...]            combined fit of the kkpi, mumu and jpsik channels (v4)
+    scalesmear multi-toy   CONFIG --seed N [--set ...]   one closure toy of the combined fit
+    scalesmear multi-toys  CONFIG                        collect those toys
 """
 import argparse, json, sys
 
@@ -23,7 +26,19 @@ def main(argv=None):
     e.add_argument("--seed", type=int, default=20181)
     c = sub.add_parser("config", help="print the configuration with all defaults"); c.add_argument("config", nargs="?")
     c.add_argument("--set", action="append", default=[])
+    cfgarg(sub.add_parser("multi", help="combined fit of several channels"))
+    t = sub.add_parser("multi-toy", help="one closure toy of the combined fit"); cfgarg(t); t.add_argument("--seed", type=int, required=True)
+    cfgarg(sub.add_parser("multi-toys", help="collect the combined-fit toys"))
     a = ap.parse_args(argv)
+
+    if a.cmd.startswith("multi"):
+        from . import multi
+        cfg = multi.load_multi_config(a.config, a.set)
+        if a.cmd == "multi":
+            res = multi.run(cfg); sys.exit(0 if res.valid else 2)
+        if a.cmd == "multi-toy":
+            multi.run_toy(cfg, a.seed); return
+        multi.collect_toys(cfg); return
 
     from .config import load_config, DEFAULTS
     if a.cmd == "config":
